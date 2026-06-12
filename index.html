@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>hanagara</title>
+  <link rel="stylesheet" href="src/style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;1,400&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.11.0/dist/tabler-icons.min.css" />
+</head>
+<body>
+
+<div id="root">
+
+  <!-- INTRO -->
+  <div id="intro">
+
+    <!-- flower scene -->
+    <div id="flower-frame">
+      <svg id="flower-svg" viewBox="0 0 320 420" xmlns="http://www.w3.org/2000/svg">
+
+        <!-- backdrop leaves -->
+        <g id="leaves" opacity="0.72">
+          <!-- large left leaf -->
+          <path d="M 60 340 Q 20 260 80 180 Q 110 220 90 300 Z" fill="#c8d4b8" stroke="#a8b898" stroke-width="0.8"/>
+          <line x1="80" y1="180" x2="78" y2="300" stroke="#a8b898" stroke-width="0.5" opacity="0.6"/>
+          <!-- left mid leaf -->
+          <path d="M 90 360 Q 40 300 100 230 Q 128 265 108 330 Z" fill="#b8c8a8" stroke="#98b088" stroke-width="0.8"/>
+          <!-- right large leaf -->
+          <path d="M 260 350 Q 310 270 248 185 Q 218 225 238 310 Z" fill="#c8d4b8" stroke="#a8b898" stroke-width="0.8"/>
+          <line x1="248" y1="185" x2="242" y2="308" stroke="#a8b898" stroke-width="0.5" opacity="0.6"/>
+          <!-- right mid leaf -->
+          <path d="M 242 368 Q 295 305 234 238 Q 206 272 222 342 Z" fill="#b8c8a8" stroke="#98b088" stroke-width="0.8"/>
+          <!-- small background leaves -->
+          <path d="M 130 390 Q 100 340 150 295 Q 165 320 150 365 Z" fill="#d0dcc0" stroke="#b0c4a0" stroke-width="0.6" opacity="0.7"/>
+          <path d="M 195 388 Q 228 338 174 294 Q 160 320 172 364 Z" fill="#d0dcc0" stroke="#b0c4a0" stroke-width="0.6" opacity="0.7"/>
+        </g>
+
+        <!-- stem -->
+        <path id="stem" d="M 160 410 Q 158 360 160 290" stroke="#8a9a78" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+
+        <!-- BUD — closed petals, will open on enter -->
+        <g id="bud" transform="translate(160, 245)">
+
+          <!-- sepal / calyx (stays) -->
+          <g id="sepals">
+            <path d="M 0 30 Q -18 10 -10 -15 Q -4 5 0 30 Z" fill="#8a9a78"/>
+            <path d="M 0 30 Q 18 10 10 -15 Q 4 5 0 30 Z" fill="#7a8a68"/>
+            <path d="M 0 30 Q -8 8 0 -18 Q 4 5 0 30 Z" fill="#9aaa88"/>
+          </g>
+
+          <!-- petals — each rotates open from its base at (0,28) -->
+          <!-- petal 1 — top center -->
+          <g id="p1" style="transform-origin:0px 28px; transform:rotate(0deg)">
+            <path d="M -7 28 Q -22 -10 0 -48 Q 22 -10 7 28 Z" fill="#f0e8e0" stroke="#d8ccc0" stroke-width="0.6"/>
+            <line x1="0" y1="28" x2="0" y2="-44" stroke="#d8ccc0" stroke-width="0.4" opacity="0.6"/>
+          </g>
+          <!-- petal 2 — upper right -->
+          <g id="p2" style="transform-origin:0px 28px; transform:rotate(0deg)">
+            <path d="M -7 28 Q -22 -10 0 -48 Q 22 -10 7 28 Z" fill="#ede4dc" stroke="#d4c8bc" stroke-width="0.6"/>
+          </g>
+          <!-- petal 3 — right -->
+          <g id="p3" style="transform-origin:0px 28px; transform:rotate(0deg)">
+            <path d="M -7 28 Q -22 -10 0 -48 Q 22 -10 7 28 Z" fill="#ebe2d8" stroke="#d2c6ba" stroke-width="0.6"/>
+          </g>
+          <!-- petal 4 — lower right -->
+          <g id="p4" style="transform-origin:0px 28px; transform:rotate(0deg)">
+            <path d="M -7 28 Q -22 -10 0 -48 Q 22 -10 7 28 Z" fill="#eee5dc" stroke="#d6cabc" stroke-width="0.6"/>
+          </g>
+          <!-- petal 5 — bottom -->
+          <g id="p5" style="transform-origin:0px 28px; transform:rotate(0deg)">
+            <path d="M -7 28 Q -22 -10 0 -48 Q 22 -10 7 28 Z" fill="#f0e8e0" stroke="#d8ccc0" stroke-width="0.6"/>
+          </g>
+          <!-- petal 6 — left -->
+          <g id="p6" style="transform-origin:0px 28px; transform:rotate(0deg)">
+            <path d="M -7 28 Q -22 -10 0 -48 Q 22 -10 7 28 Z" fill="#ece3da" stroke="#d4c8ba" stroke-width="0.6"/>
+          </g>
+
+          <!-- stamen center (hidden until bloom) -->
+          <circle id="stamen" cx="0" cy="-10" r="6" fill="#e8d890" opacity="0"/>
+          <circle cx="0" cy="-10" r="3" fill="#d4c060" id="stamen2" opacity="0"/>
+        </g>
+
+      </svg>
+    </div>
+
+    <!-- text below frame -->
+    <div class="intro-title">hanagara</div>
+    <div class="intro-sub">your life terminal</div>
+    <div class="intro-note" id="inote">loading your world...</div>
+    <button class="enter-btn" id="ebtn" onclick="enter()">enter</button>
+
+  </div>
+
+  <!-- APP -->
+  <div id="app" class="hidden">
+
+    <header class="hdr">
+      <span class="hdr-brand">my world</span>
+      <div class="hdr-right">
+        <div class="chip chip-fire">🔥 <span id="sval">0</span>d</div>
+        <div class="chip chip-xp">✦ <span id="xval">0</span></div>
+        <button class="icon-btn" onclick="nav('settings')" aria-label="settings"><i class="ti ti-settings"></i></button>
+      </div>
+    </header>
+
+    <nav class="nav">
+      <button class="nb on"  onclick="nav('world')">world</button>
+      <button class="nb"     onclick="nav('hobbies')">hobbies</button>
+      <button class="nb"     onclick="nav('goals')">goals</button>
+      <button class="nb"     onclick="nav('todos')">todos</button>
+      <button class="nb"     onclick="nav('history')">history</button>
+      <button class="nb"     onclick="nav('settings')">settings</button>
+    </nav>
+
+    <div class="scroll" id="scroll">
+
+      <!-- WORLD (timeline) -->
+      <div class="panel on" id="panel-world">
+        <div id="stat-grid" class="stat-grid" style="padding:14px 24px 0;flex-shrink:0"></div>
+
+        <!-- 30-day streak grid -->
+        <div id="streak-grid-wrap">
+          <div id="streak-grid-label">last 30 days</div>
+          <div id="streak-grid"></div>
+        </div>
+
+        <!-- timeline strip -->
+        <div id="timeline-wrap">
+          <div id="timeline-line"></div>
+          <div id="timeline-track"></div>
+        </div>
+
+        <!-- focused activity detail -->
+        <div id="tl-detail" class="tl-detail hidden">
+          <div id="tl-detail-inner">
+            <div id="tl-detail-sketch"></div>
+            <div id="tl-detail-source"></div>
+            <div id="tl-detail-time"></div>
+            <div id="tl-detail-xp"></div>
+            <textarea id="tl-detail-note" class="tl-note" placeholder="add a note..."></textarea>
+            <button class="tl-note-save" onclick="saveTlNote()">save</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- HOBBIES -->
+      <div class="panel hidden" id="panel-hobbies">
+        <p class="eyebrow" style="margin-top:0">your hobbies</p>
+        <div id="hobby-list"></div>
+        <button class="add-sub full-btn" onclick="openHobbyModal()">+ add hobby</button>
+      </div>
+
+      <!-- GOALS -->
+      <div class="panel hidden" id="panel-goals">
+        <p class="eyebrow" style="margin-top:0">active quests</p>
+        <div id="goal-list"></div>
+        <button class="add-sub full-btn" onclick="openGoalModal()">+ add goal</button>
+      </div>
+
+      <!-- TODOS -->
+      <div class="panel hidden" id="panel-todos">
+        <div class="todo-header">
+          <p class="eyebrow" style="margin:0">today's quests</p>
+          <button class="clear-done-btn" id="clear-done-btn" onclick="clearCompleted()">clear completed</button>
+        </div>
+        <div class="todo-wrap" id="todos-all"></div>
+        <div class="add-row">
+          <input class="add-in" id="todo-in" placeholder="add a quest..." />
+          <button class="add-sub" onclick="addTodo()">add</button>
+        </div>
+      </div>
+
+      <!-- HISTORY -->
+      <div class="panel hidden" id="panel-history">
+        <p class="eyebrow" style="margin-top:0">xp history</p>
+        <div id="history-list"></div>
+      </div>
+
+      <!-- SETTINGS -->
+      <div class="panel hidden" id="panel-settings">
+        <p class="eyebrow" style="margin-top:0">theme</p>
+        <div class="theme-grid" id="theme-grid"></div>
+        <p class="eyebrow">about</p>
+        <div class="card" style="cursor:default">
+          <div class="setting-row">
+            <div><div class="setting-label">version</div><div class="setting-sub">hanagara v1</div></div>
+          </div>
+          <div class="setting-row">
+            <div><div class="setting-label">total xp</div><div class="setting-sub" id="total-xp-label">—</div></div>
+          </div>
+          <div class="setting-row">
+            <div><div class="setting-label">sessions logged</div><div class="setting-sub" id="sessions-label">—</div></div>
+          </div>
+          <div class="setting-row" style="border-bottom:none">
+            <div><div class="setting-label">streak</div><div class="setting-sub" id="streak-label">—</div></div>
+          </div>
+        </div>
+        <div style="margin-top:12px">
+          <button class="btn full-btn" style="color:var(--ink3)" onclick="if(confirm('Reset all data?')){localStorage.removeItem('hanagara-v1');location.reload()}">reset data</button>
+        </div>
+      </div>
+
+    </div><!-- end scroll -->
+
+    <!-- ─── SPIRIT ─────────────────────────────────────── -->
+    <div id="spirit-wrap">
+      <!-- bubble thread, above the orb -->
+      <div id="spirit-bubbles"></div>
+
+      <!-- input row, hidden until open -->
+      <div id="spirit-input-row" class="hidden">
+        <input id="spirit-input" class="spirit-in" placeholder="..." />
+        <button class="spirit-send" onclick="spiritSend()" aria-label="send"><i class="ti ti-arrow-up"></i></button>
+      </div>
+
+      <!-- the orb itself -->
+      <div id="spirit-orb" onclick="spiritToggle()" title="your companion"></div>
+    </div>
+
+  </div><!-- end #app -->
+
+<!-- GOAL MODAL -->
+<div id="goal-modal-overlay" class="modal-overlay hidden" onclick="closeGoalModal()"></div>
+<div id="goal-modal" class="modal hidden">
+  <div class="modal-header">
+    <span class="modal-title" id="gm-title">add goal</span>
+    <button class="modal-close" onclick="closeGoalModal()"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="modal-field">
+    <label class="modal-label">name</label>
+    <input class="modal-input" id="gm-name" placeholder="e.g. run a 5k, read 12 books..." />
+  </div>
+  <div class="modal-field">
+    <label class="modal-label">description</label>
+    <input class="modal-input" id="gm-desc" placeholder="a short note about this goal..." />
+  </div>
+  <div class="modal-field" style="display:flex;gap:10px">
+    <div style="flex:1">
+      <label class="modal-label">target</label>
+      <input class="modal-input" id="gm-max" type="number" min="1" placeholder="10" />
+    </div>
+    <div style="flex:1">
+      <label class="modal-label">current progress</label>
+      <input class="modal-input" id="gm-cur" type="number" min="0" placeholder="0" />
+    </div>
+  </div>
+  <div class="modal-field">
+    <label class="modal-label">color</label>
+    <div class="modal-colors" id="gm-colors"></div>
+  </div>
+  <div class="modal-field">
+    <label class="modal-label">icon</label>
+    <div class="modal-icons" id="gm-icons"></div>
+  </div>
+  <div class="modal-actions">
+    <button class="btn" id="gm-delete" onclick="deleteGoal()" style="color:#7a3030;display:none">delete</button>
+    <button class="btn p" onclick="saveGoal()">save</button>
+  </div>
+</div>
+
+<!-- TODO MODAL -->
+<div id="todo-modal-overlay" class="modal-overlay hidden" onclick="closeTodoModal()"></div>
+<div id="todo-modal" class="modal hidden">
+  <div class="modal-header">
+    <span class="modal-title" id="tm-title">edit quest</span>
+    <button class="modal-close" onclick="closeTodoModal()"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="modal-field">
+    <label class="modal-label">label</label>
+    <input class="modal-input" id="tm-label" placeholder="what's the quest?" />
+  </div>
+  <div class="modal-field">
+    <label class="modal-label">xp reward</label>
+    <input class="modal-input" id="tm-xp" type="number" min="10" max="500" placeholder="50" />
+  </div>
+  <div class="modal-actions">
+    <button class="btn" id="tm-delete" onclick="deleteTodo()" style="color:#7a3030;display:none">delete</button>
+    <button class="btn p" onclick="saveTodo()">save</button>
+  </div>
+</div>
+
+<!-- HOBBY MODAL -->
+<div id="hobby-modal-overlay" class="modal-overlay hidden" onclick="closeHobbyModal()"></div>
+<div id="hobby-modal" class="modal hidden">
+  <div class="modal-header">
+    <span class="modal-title" id="modal-title">add hobby</span>
+    <button class="modal-close" onclick="closeHobbyModal()"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="modal-field">
+    <label class="modal-label">name</label>
+    <input class="modal-input" id="hm-name" placeholder="e.g. guitar, journaling..." />
+  </div>
+  <div class="modal-field">
+    <label class="modal-label">xp per session</label>
+    <input class="modal-input" id="hm-xp" type="number" min="10" max="500" placeholder="50" />
+  </div>
+  <div class="modal-field">
+    <label class="modal-label">color</label>
+    <div class="modal-colors" id="hm-colors"></div>
+  </div>
+  <div class="modal-field">
+    <label class="modal-label">icon</label>
+    <div class="modal-icons" id="hm-icons"></div>
+  </div>
+  <div class="modal-actions">
+    <button class="btn" id="hm-delete" onclick="deleteHobby()" style="color:#7a3030;display:none">delete</button>
+    <button class="btn p" onclick="saveHobby()">save</button>
+  </div>
+</div>
+
+<script src="src/config.js"></script>
+<script src="src/data.js"></script>
+<script src="src/blossom.js"></script>
+<script src="src/app.js"></script>
+</body>
+</html>
