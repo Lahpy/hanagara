@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>hanagara</title>
+  <link rel="stylesheet" href="src/style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;1,400&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.11.0/dist/tabler-icons.min.css" />
+</head>
+<body>
+
+<div id="root">
+
+  <!-- INTRO -->
+  <div id="intro">
+    <div class="orb"></div>
+    <div class="intro-title">my world</div>
+    <div class="intro-sub">your life terminal</div>
+    <div class="intro-note" id="inote">loading your world...</div>
+    <button class="enter-btn" id="ebtn" onclick="showBlossom()">enter ↗</button>
+  </div>
+
+  <!-- BLOSSOM SCREEN -->
+  <div id="blossom-screen" class="hidden" style="position:absolute;inset:0;background:var(--bg0);z-index:10">
+    <svg id="blossom-svg" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1"></svg>
+
+    <div id="blossom-center" style="position:absolute;border-radius:50% 44% 50% 44%;background:var(--acc);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;z-index:3" onclick="exitBlossom('home')">
+      <div style="position:absolute;inset:0;background:radial-gradient(circle at 35% 28%,rgba(255,255,255,.22),transparent 60%);pointer-events:none"></div>
+      <div style="font-family:'Libre Baskerville',serif;font-style:italic;font-size:15px;color:rgba(255,255,255,.95);z-index:1">my world</div>
+      <div id="bl-co-sub" style="font-size:11px;color:rgba(255,255,255,.7);z-index:1;margin-top:3px;letter-spacing:.05em">— xp · —d streak</div>
+    </div>
+
+    <div id="blossom-bubbles" style="position:absolute;inset:0;z-index:2"></div>
+
+    <div id="blossom-tooltip" style="position:absolute;z-index:30;pointer-events:none;background:var(--bg0);border:1px solid var(--bg2);border-radius:12px;padding:10px 14px;min-width:140px;opacity:0;transition:opacity .18s ease;transform:translate(-50%,-115%)">
+      <div id="bl-tt-name" style="font-size:13px;font-weight:500;color:var(--ink);margin-bottom:3px"></div>
+      <div id="bl-tt-body" style="font-size:12px;color:var(--ink3);line-height:1.6;white-space:pre-line"></div>
+    </div>
+
+    <div id="bl-xp-bar" style="position:absolute;top:14px;left:50%;transform:translateX(-50%);background:var(--acc-p);border:1px solid var(--acc-l);border-radius:20px;padding:5px 14px;font-size:12px;color:var(--acc-t);font-weight:500;z-index:25;white-space:nowrap">— xp</div>
+
+    <button onclick="exitBlossom('home')" style="position:absolute;bottom:18px;right:18px;z-index:25;padding:6px 14px;border:1px solid var(--bg2);border-radius:20px;background:none;font-size:12px;color:var(--ink3);cursor:pointer;font-family:'DM Sans',sans-serif;transition:background .2s,color .2s" onmouseover="this.style.background='var(--bg1)';this.style.color='var(--ink)'" onmouseout="this.style.background='none';this.style.color='var(--ink3)'">open terminal →</button>
+  </div>
+
+  <!-- APP -->
+  <div id="app" class="hidden">
+
+    <header class="hdr">
+      <span class="hdr-brand">my world</span>
+      <div class="hdr-right">
+        <div class="chip chip-fire">🔥 <span id="sval">0</span>d</div>
+        <div class="chip chip-xp">✦ <span id="xval">0</span></div>
+        <button class="icon-btn" onclick="nav('settings')" aria-label="settings"><i class="ti ti-settings"></i></button>
+      </div>
+    </header>
+
+    <nav class="nav">
+      <button class="nb on"  onclick="nav('home')">home</button>
+      <button class="nb"     onclick="nav('hobbies')">hobbies</button>
+      <button class="nb"     onclick="nav('goals')">goals</button>
+      <button class="nb"     onclick="nav('todos')">todos</button>
+      <button class="nb"     onclick="nav('companion')">companion</button>
+      <button class="nb"     onclick="nav('settings')">settings</button>
+    </nav>
+
+    <div class="scroll" id="scroll">
+
+      <!-- HOME -->
+      <div class="panel on" id="panel-home">
+        <div class="whisper">
+          <div class="w-label">✦ today's note</div>
+          <div class="w-text" id="whisper-text">Loading your world...</div>
+        </div>
+        <p class="eyebrow">your stats</p>
+        <div class="stat-grid" id="stat-grid"></div>
+        <p class="eyebrow">today's quests</p>
+        <div class="todo-wrap" id="home-todos"></div>
+      </div>
+
+      <!-- HOBBIES -->
+      <div class="panel hidden" id="panel-hobbies">
+        <p class="eyebrow" style="margin-top:0">your hobbies</p>
+        <div id="hobby-list"></div>
+        <button class="add-sub full-btn" onclick="sendPrompt('I want to add a new hobby to my life terminal')">+ add hobby ↗</button>
+      </div>
+
+      <!-- GOALS -->
+      <div class="panel hidden" id="panel-goals">
+        <p class="eyebrow" style="margin-top:0">active quests</p>
+        <div id="goal-list"></div>
+        <button class="add-sub full-btn" onclick="sendPrompt('Help me set a new goal to track')">+ add goal ↗</button>
+      </div>
+
+      <!-- TODOS -->
+      <div class="panel hidden" id="panel-todos">
+        <p class="eyebrow" style="margin-top:0">today's quests</p>
+        <div class="todo-wrap" id="todos-all"></div>
+        <div class="add-row">
+          <input class="add-in" id="todo-in" placeholder="add a quest..." />
+          <button class="add-sub" onclick="addTodo()">add</button>
+        </div>
+      </div>
+
+      <!-- COMPANION -->
+      <div class="panel hidden" id="panel-companion">
+        <div class="chat-area" id="chat-area"></div>
+        <div class="chat-foot">
+          <div class="chat-row">
+            <input class="chat-in" id="chat-in" placeholder="talk to your companion..." />
+            <button class="chat-send" onclick="sendChat()" aria-label="send"><i class="ti ti-arrow-up"></i></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- SETTINGS -->
+      <div class="panel hidden" id="panel-settings">
+        <p class="eyebrow" style="margin-top:0">theme</p>
+        <div class="theme-grid" id="theme-grid"></div>
+        <p class="eyebrow">about</p>
+        <div class="card" style="cursor:default">
+          <div class="setting-row">
+            <div><div class="setting-label">version</div><div class="setting-sub">hanagara v1</div></div>
+          </div>
+          <div class="setting-row">
+            <div><div class="setting-label">total xp</div><div class="setting-sub" id="total-xp-label">—</div></div>
+          </div>
+          <div class="setting-row">
+            <div><div class="setting-label">sessions logged</div><div class="setting-sub" id="sessions-label">—</div></div>
+          </div>
+          <div class="setting-row" style="border-bottom:none">
+            <div><div class="setting-label">streak</div><div class="setting-sub" id="streak-label">—</div></div>
+          </div>
+        </div>
+        <div style="margin-top:12px">
+          <button class="btn full-btn" style="color:var(--ink3)" onclick="if(confirm('Reset all data?')){localStorage.removeItem('hanagara-v1');location.reload()}">reset data</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="src/data.js"></script>
+<script src="src/blossom.js"></script>
+<script src="src/app.js"></script>
+</body>
+</html>
