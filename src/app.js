@@ -216,7 +216,6 @@ function renderAll() {
   renderStats();
   renderHobbies();
   renderGoals();
-  renderTodos('home-todos', 3);
   renderTodos('todos-all');
   document.getElementById('xval').textContent = S.xp.toLocaleString();
   document.getElementById('sval').textContent = S.streak;
@@ -271,11 +270,12 @@ function addTodo() {
   if (!v) return;
   S.todos.push({ id: 't' + Date.now(), label: v, done: false, xp: 50 });
   inp.value = '';
-  save(); renderTodos('todos-all'); renderTodos('home-todos', 3);
+  save(); renderTodos('todos-all');
 }
 
 // ─── NAV ──────────────────────────────────────────────────
 function nav(name) {
+  const prev = TABS.find((t, i) => document.querySelectorAll('.nb')[i]?.classList.contains('on'));
   TABS.forEach((t, i) => {
     const panel = document.getElementById('panel-' + t);
     const btn   = document.querySelectorAll('.nb')[i];
@@ -283,6 +283,14 @@ function nav(name) {
     if (btn)   { btn.classList.toggle('on', t === name); }
   });
   document.getElementById('scroll').scrollTop = 0;
+  if (name === 'world') {
+    const bp = document.getElementById('blossom-panel');
+    const scroll = document.getElementById('scroll');
+    if (bp) bp.style.height = (scroll.offsetHeight) + 'px';
+    resumeBlossom();
+  } else {
+    pauseBlossom();
+  }
   if (name === 'companion') renderChatUI();
   if (name === 'settings')  renderSettings();
 }
@@ -390,7 +398,23 @@ async function loadIntroNote() {
 }
 
 // ─── ENTER ────────────────────────────────────────────────
-// Handled by blossom.js — exitBlossom() opens the app.
+function enter() {
+  const intro = document.getElementById('intro');
+  intro.classList.add('out');
+  setTimeout(() => {
+    intro.style.display = 'none';
+    document.getElementById('app').classList.remove('hidden');
+    renderAll();
+    const today = new Date().toDateString();
+    if (S.lastLogin !== today) { S.lastLogin = today; save(); }
+    requestAnimationFrame(() => {
+      const bp = document.getElementById('blossom-panel');
+      const scroll = document.getElementById('scroll');
+      if (bp) bp.style.height = scroll.offsetHeight + 'px';
+      renderBlossom();
+    });
+  }, 700);
+}
 
 // ─── EVENT LISTENERS ──────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {

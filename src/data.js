@@ -2,7 +2,7 @@
 const XP_PER_LVL = 300;
 const STORAGE_KEY = 'hanagara-v1';
 
-const TABS = ['home', 'hobbies', 'goals', 'todos', 'companion', 'settings'];
+const TABS = ['world', 'hobbies', 'goals', 'todos', 'companion', 'settings'];
 
 const THEMES = [
   { id: 'default', label: 'garden', bg: ['#faf7f1', '#f3ede2', '#c8d9c1', '#8fa887'] },

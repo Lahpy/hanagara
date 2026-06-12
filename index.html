@@ -20,29 +20,7 @@
     <div class="intro-title">my world</div>
     <div class="intro-sub">your life terminal</div>
     <div class="intro-note" id="inote">loading your world...</div>
-    <button class="enter-btn" id="ebtn" onclick="showBlossom()">enter ↗</button>
-  </div>
-
-  <!-- BLOSSOM SCREEN -->
-  <div id="blossom-screen" class="hidden" style="position:absolute;inset:0;background:var(--bg0);z-index:10">
-    <svg id="blossom-svg" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1"></svg>
-
-    <div id="blossom-center" style="position:absolute;border-radius:50% 44% 50% 44%;background:var(--acc);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;z-index:3" onclick="exitBlossom('home')">
-      <div style="position:absolute;inset:0;background:radial-gradient(circle at 35% 28%,rgba(255,255,255,.22),transparent 60%);pointer-events:none"></div>
-      <div style="font-family:'Libre Baskerville',serif;font-style:italic;font-size:15px;color:rgba(255,255,255,.95);z-index:1">my world</div>
-      <div id="bl-co-sub" style="font-size:11px;color:rgba(255,255,255,.7);z-index:1;margin-top:3px;letter-spacing:.05em">— xp · —d streak</div>
-    </div>
-
-    <div id="blossom-bubbles" style="position:absolute;inset:0;z-index:2"></div>
-
-    <div id="blossom-tooltip" style="position:absolute;z-index:30;pointer-events:none;background:var(--bg0);border:1px solid var(--bg2);border-radius:12px;padding:10px 14px;min-width:140px;opacity:0;transition:opacity .18s ease;transform:translate(-50%,-115%)">
-      <div id="bl-tt-name" style="font-size:13px;font-weight:500;color:var(--ink);margin-bottom:3px"></div>
-      <div id="bl-tt-body" style="font-size:12px;color:var(--ink3);line-height:1.6;white-space:pre-line"></div>
-    </div>
-
-    <div id="bl-xp-bar" style="position:absolute;top:14px;left:50%;transform:translateX(-50%);background:var(--acc-p);border:1px solid var(--acc-l);border-radius:20px;padding:5px 14px;font-size:12px;color:var(--acc-t);font-weight:500;z-index:25;white-space:nowrap">— xp</div>
-
-    <button onclick="exitBlossom('home')" style="position:absolute;bottom:18px;right:18px;z-index:25;padding:6px 14px;border:1px solid var(--bg2);border-radius:20px;background:none;font-size:12px;color:var(--ink3);cursor:pointer;font-family:'DM Sans',sans-serif;transition:background .2s,color .2s" onmouseover="this.style.background='var(--bg1)';this.style.color='var(--ink)'" onmouseout="this.style.background='none';this.style.color='var(--ink3)'">open terminal →</button>
+    <button class="enter-btn" id="ebtn" onclick="enter()">enter ↗</button>
   </div>
 
   <!-- APP -->
@@ -58,7 +36,7 @@
     </header>
 
     <nav class="nav">
-      <button class="nb on"  onclick="nav('home')">home</button>
+      <button class="nb on"  onclick="nav('world')">world</button>
       <button class="nb"     onclick="nav('hobbies')">hobbies</button>
       <button class="nb"     onclick="nav('goals')">goals</button>
       <button class="nb"     onclick="nav('todos')">todos</button>
@@ -68,16 +46,30 @@
 
     <div class="scroll" id="scroll">
 
-      <!-- HOME -->
-      <div class="panel on" id="panel-home">
-        <div class="whisper">
-          <div class="w-label">✦ today's note</div>
-          <div class="w-text" id="whisper-text">Loading your world...</div>
+      <!-- WORLD (blossom) -->
+      <div class="panel on" id="panel-world">
+        <div id="blossom-panel" style="position:relative;width:100%;height:100%">
+          <div id="blossom-loader"  style="display:none;position:absolute;left:50%;top:50%;width:180px;height:180px;margin-left:-90px;margin-top:-90px;border-radius:50%;border:1px dashed var(--acc-l);animation:bl-spin 8s linear infinite;opacity:.4;pointer-events:none;z-index:1"></div>
+          <div id="blossom-loader-text" style="display:none;position:absolute;left:50%;top:calc(50% + 70px);transform:translateX(-50%);font-family:'Libre Baskerville',serif;font-style:italic;font-size:12px;color:var(--ink3);white-space:nowrap;animation:bl-pulse 2s ease-in-out infinite;z-index:1">reading your world...</div>
+
+          <svg style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1">
+            <circle cx="50%" cy="50%" r="140" fill="none" stroke="var(--acc-l)" stroke-width="1" stroke-dasharray="4 8" opacity="0.3"/>
+            <circle cx="50%" cy="50%" r="220" fill="none" stroke="var(--acc-l)" stroke-width="1" stroke-dasharray="3 10" opacity="0.2"/>
+          </svg>
+
+          <div id="blossom-center-orb" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);border-radius:50% 44% 50% 44%;background:var(--acc);display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;z-index:3;width:88px;height:88px">
+            <div style="position:absolute;inset:0;background:radial-gradient(circle at 35% 28%,rgba(255,255,255,.22),transparent 60%);pointer-events:none"></div>
+            <div style="font-family:'Libre Baskerville',serif;font-style:italic;font-size:13px;color:rgba(255,255,255,.95);z-index:1">my world</div>
+            <div id="bl-orb-sub" style="font-size:10px;color:rgba(255,255,255,.65);z-index:1;margin-top:2px;letter-spacing:.04em">— xp</div>
+          </div>
+
+          <div id="blossom-bubbles" style="position:absolute;inset:0;z-index:2"></div>
+
+          <button id="blossom-refresh" onclick="loadBlossomInsights()" aria-label="refresh insights"
+            style="position:absolute;top:12px;right:12px;z-index:10;width:30px;height:30px;border-radius:50%;border:1px solid var(--bg2);background:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--ink3);font-size:14px;transition:background .2s,color .2s"
+            onmouseover="this.style.background='var(--bg1)';this.style.color='var(--ink)'"
+            onmouseout="this.style.background='none';this.style.color='var(--ink3)'">↻</button>
         </div>
-        <p class="eyebrow">your stats</p>
-        <div class="stat-grid" id="stat-grid"></div>
-        <p class="eyebrow">today's quests</p>
-        <div class="todo-wrap" id="home-todos"></div>
       </div>
 
       <!-- HOBBIES -->

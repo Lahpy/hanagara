@@ -1,218 +1,184 @@
-// ─── BLOSSOM SCREEN ───────────────────────────────────────
-// Sits between the intro and the main terminal.
-// Reads from S (state) so bubbles reflect real data.
-// Call initBlossom() after load() has run.
+// ─── BLOSSOM / WORLD SCREEN ───────────────────────────────
+// The "world" tab — AI-generated insight bubbles orbiting a center orb.
+// Call renderBlossom() when the world tab is activated.
 
 let blossomFrame = null;
-let blossomAngles = [0, 0];
-let blossomSpeeds = [0.18, 0.10];
 let blossomBubbles = [];
-let blossomStarted = false;
+let blossomAngles = [];
+let blossomSpeeds = [];
+let blossomLoading = false;
+
+const BLOSSOM_COLORS = [
+  {bg:'#eaf2e6',border:'#c8d9c1',text:'#3d5a37'},
+  {bg:'#eae6f5',border:'#c8bfe8',text:'#3d2e6b'},
+  {bg:'#f5e8d4',border:'#e8c990',text:'#7a4e18'},
+  {bg:'#ddeef7',border:'#aacfe8',text:'#1e4d6b'},
+  {bg:'#f5e0e0',border:'#e8b8b8',text:'#7a3030'},
+  {bg:'#f3ede2',border:'#e0d4bc',text:'#5c5549'},
+  {bg:'#eaf2e6',border:'#c8d9c1',text:'#3d5a37'},
+  {bg:'#eae6f5',border:'#c8bfe8',text:'#3d2e6b'},
+];
+
+const BLOSSOM_ORBITS     = [0, 0, 0, 0, 1, 1, 1];
+const BLOSSOM_BASE_ANGLES = [0, 51, 103, 154, 60, 180, 300];
+const BLOSSOM_SIZES       = [110, 120, 115, 108, 96, 100, 94];
 
 function blossomW() { return window.innerWidth; }
-function blossomH() { return window.innerHeight; }
+function blossomH() { return document.getElementById('blossom-panel')?.offsetHeight || window.innerHeight - 88; }
 
-function getOrbitRadius(orbit) {
-  const min = Math.min(blossomW(), blossomH());
-  return orbit === 0 ? min * 0.29 : min * 0.44;
+function buildInsightPrompt() {
+  const h = S.hobbies.map(h => `${h.name}: ${h.sessions} sessions, lv${h.lvl}, streak ${h.streak}d`).join('\n');
+  const g = S.goals.map(g => `${g.name}: ${g.cur}/${g.max} (${Math.min(100,Math.round(g.cur/g.max*100))}%)`).join('\n');
+  return `You are analyzing someone's personal life terminal called "my world".
+Their data:
+HOBBIES:\n${h}
+GOALS:\n${g}
+STATS: consistency ${S.stats.consistency}, creativity ${S.stats.creativity}, discipline ${S.stats.discipline}, energy ${S.stats.energy}
+STREAK: ${S.streak} days, XP: ${S.xp}
+
+Generate exactly 7 short insight bubbles. Each should be a genuine observation, trend, encouragement, or gentle nudge — like a wise friend reading the data.
+
+Respond with ONLY a JSON array, no markdown, no explanation:
+[
+  {"text": "short poetic insight here", "tag": "oneword"},
+  ...
+]
+
+Rules:
+- "text" is 6–12 words max, punchy and personal
+- Vary tone: warm, observational, gently challenging
+- Reference specific hobby/goal names from the data
+- No generic advice
+- "tag" is always 1 word lowercase`;
 }
 
-function getCenterSize() {
-  return Math.min(blossomW(), blossomH()) * 0.16;
+function clearBlossom() {
+  cancelAnimationFrame(blossomFrame);
+  blossomFrame = null;
+  const c = document.getElementById('blossom-bubbles');
+  if (c) c.innerHTML = '';
+  blossomBubbles = [];
+  blossomAngles = [];
+  blossomSpeeds = [];
 }
 
-// Build bubble data from live state
-function buildBlossomData() {
-  const hobbies = S.hobbies.map((h, i) => ({
-    id: h.id,
-    label: h.name,
-    icon: { aim: '🎯', rank: '🏆', draw: '🖌', gym: '🏋', photo: '📷' }[h.id] || '✦',
-    val: 'lv ' + h.lvl,
-    size: 62 + Math.min(h.sessions, 5) * 3,
-    color: HOBBY_COLORS[h.color],
-    orbit: 0,
-    angle: i * 72,
-    tip: `${h.sessions} sessions logged\n+${h.xpPerSession}xp per session\n${h.streak}d streak`,
-    tab: 'hobbies',
-  }));
-
-  const goals = S.goals.map((g, i) => {
-    const pct = Math.min(100, Math.round((g.cur / g.max) * 100));
-    return {
-      id: g.id,
-      label: g.name,
-      icon: { g1: '🥇', g2: '📓', g3: '🔥', g4: '📷' }[g.id] || '✦',
-      val: pct + '%',
-      size: 54 + Math.round(pct / 20),
-      color: HOBBY_COLORS[g.color],
-      orbit: 1,
-      angle: i * 90,
-      tip: `${g.desc}\n${g.cur} / ${g.max}`,
-      tab: 'goals',
-    };
-  });
-
-  return [...hobbies, ...goals];
-}
-
-function positionCenterOrb() {
-  const orb = document.getElementById('blossom-center');
-  if (!orb) return;
-  const s = getCenterSize();
-  orb.style.width  = s + 'px';
-  orb.style.height = s + 'px';
-  orb.style.left   = '50%';
-  orb.style.top    = '50%';
-  orb.style.transform = 'translate(-50%,-50%)';
-}
-
-function buildBubbleEls() {
+function spawnBlossomBubbles(insights) {
   const container = document.getElementById('blossom-bubbles');
   if (!container) return;
   container.innerHTML = '';
   blossomBubbles = [];
+  blossomAngles = [];
+  blossomSpeeds = [];
 
-  const data = buildBlossomData();
-  data.forEach((b, i) => {
+  insights.forEach((ins, i) => {
+    const c      = BLOSSOM_COLORS[i % BLOSSOM_COLORS.length];
+    const orbit  = BLOSSOM_ORBITS[i] ?? 0;
+    const size   = BLOSSOM_SIZES[i] ?? 105;
+    const fsize  = size > 110 ? '11.5px' : '11px';
+    const speed  = (0.08 + Math.random() * 0.06) * (orbit === 1 ? -1 : 1);
+
     const el = document.createElement('div');
     el.className = 'bl-bubble';
-    el.style.cssText = `
-      width:${b.size}px;height:${b.size}px;
-      background:${b.color.bg};
-      border-color:${b.color.border};
-      left:0;top:0;opacity:0;
-      transition:opacity .5s ease ${i * 0.07 + 0.2}s, transform .2s ease;
-    `;
+    el.style.cssText = `width:${size}px;height:${size}px;background:${c.bg};border-color:${c.border};opacity:0;transition:opacity .5s ease ${i*80+100}ms;`;
     el.innerHTML = `
-      <div class="bl-b-icon" style="color:${b.color.text}">${b.icon}</div>
-      <div class="bl-b-label" style="color:${b.color.text}">${b.label}</div>
-      <div class="bl-b-val" style="color:${b.color.text}">${b.val}</div>`;
-
-    el.addEventListener('mouseenter', () => {
-      showBlossomTooltip(b, el);
-      blossomSpeeds = [0.04, 0.025];
-    });
-    el.addEventListener('mouseleave', () => {
-      hideBlossomTooltip();
-      blossomSpeeds = [0.18, 0.10];
-    });
-    el.addEventListener('click', () => exitBlossom(b.tab));
-
+      <div class="bl-btext" style="color:${c.text};font-size:${fsize}">${ins.text}</div>
+      <div class="bl-btag"  style="color:${c.text}">${ins.tag}</div>`;
     container.appendChild(el);
-    blossomBubbles.push({ el, data: b });
-  });
-}
 
-function updateBubblePositions() {
-  const cx = blossomW() / 2, cy = blossomH() / 2;
-  blossomBubbles.forEach(({ el, data }) => {
-    const r     = getOrbitRadius(data.orbit);
-    const base  = blossomAngles[data.orbit];
-    const angle = (data.angle + base) * Math.PI / 180;
-    const x     = cx + Math.cos(angle) * r - data.size / 2;
-    const y     = cy + Math.sin(angle) * r - data.size / 2;
-    el.style.left = x + 'px';
-    el.style.top  = y + 'px';
-  });
-  drawBlossomConnectors();
-}
+    blossomBubbles.push({ el, orbit, size });
+    blossomAngles.push(BLOSSOM_BASE_ANGLES[i] ?? i * 51);
+    blossomSpeeds.push(speed);
 
-function drawBlossomConnectors() {
-  const svg = document.getElementById('blossom-svg');
-  if (!svg) return;
-  svg.innerHTML = '';
-  const cx = blossomW() / 2, cy = blossomH() / 2;
-
-  blossomBubbles.forEach(({ data }) => {
-    if (data.orbit !== 0) return;
-    const r     = getOrbitRadius(0);
-    const angle = (data.angle + blossomAngles[0]) * Math.PI / 180;
-    const bx    = cx + Math.cos(angle) * r;
-    const by    = cy + Math.sin(angle) * r;
-    const line  = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    line.setAttribute('x1', cx); line.setAttribute('y1', cy);
-    line.setAttribute('x2', bx); line.setAttribute('y2', by);
-    line.setAttribute('stroke', '#c8d9c1');
-    line.setAttribute('stroke-width', '1');
-    line.setAttribute('stroke-dasharray', '3 5');
-    line.setAttribute('opacity', '0.55');
-    svg.appendChild(line);
+    requestAnimationFrame(() => { el.style.opacity = '1'; });
   });
+
+  blossomAnimate();
 }
 
 function blossomAnimate() {
-  blossomAngles[0] += blossomSpeeds[0];
-  blossomAngles[1] -= blossomSpeeds[1];
-  updateBubblePositions();
+  const panel  = document.getElementById('blossom-panel');
+  if (!panel) return;
+  const bounds = panel.getBoundingClientRect();
+  const cx = bounds.width / 2;
+  const cy = bounds.height / 2;
+  const orbitR = [Math.min(bounds.width, bounds.height) * 0.28, Math.min(bounds.width, bounds.height) * 0.43];
+
+  blossomBubbles.forEach(({ el, orbit, size }, i) => {
+    blossomAngles[i] += blossomSpeeds[i];
+    const rad = blossomAngles[i] * Math.PI / 180;
+    const x   = cx + Math.cos(rad) * orbitR[orbit] - size / 2;
+    const y   = cy + Math.sin(rad) * orbitR[orbit] - size / 2;
+    el.style.left = x + 'px';
+    el.style.top  = y + 'px';
+  });
+
   blossomFrame = requestAnimationFrame(blossomAnimate);
 }
 
-function showBlossomTooltip(b, el) {
-  const tt   = document.getElementById('blossom-tooltip');
-  const rect = el.getBoundingClientRect();
-  document.getElementById('bl-tt-name').textContent = b.label;
-  document.getElementById('bl-tt-body').textContent = b.tip;
-  tt.style.left = (rect.left + rect.width / 2) + 'px';
-  tt.style.top  = rect.top + 'px';
-  tt.classList.add('show');
-}
+async function loadBlossomInsights() {
+  if (blossomLoading) return;
+  blossomLoading = true;
 
-function hideBlossomTooltip() {
-  document.getElementById('blossom-tooltip')?.classList.remove('show');
-}
+  const btn = document.getElementById('blossom-refresh');
+  if (btn) { btn.style.transform = 'rotate(360deg)'; btn.style.transition = 'transform .6s ease'; setTimeout(() => { btn.style.transform = ''; btn.style.transition = ''; }, 700); }
 
-// Called when user clicks a bubble or "open terminal"
-function exitBlossom(tabName) {
-  cancelAnimationFrame(blossomFrame);
-  const screen = document.getElementById('blossom-screen');
-  screen.style.transition = 'opacity .45s ease';
-  screen.style.opacity = '0';
-  setTimeout(() => {
-    screen.classList.add('hidden');
-    screen.style.opacity = '';
-    document.getElementById('app').classList.remove('hidden');
-    renderAll();
-    loadWhisper();
-    if (tabName) nav(tabName);
-    const today = new Date().toDateString();
-    if (S.lastLogin !== today) { S.lastLogin = today; save(); }
-  }, 450);
-}
+  clearBlossom();
+  const loader = document.getElementById('blossom-loader');
+  const loaderText = document.getElementById('blossom-loader-text');
+  if (loader) loader.style.display = 'block';
+  if (loaderText) loaderText.style.display = 'block';
 
-// Called from intro "enter" button
-function showBlossom() {
-  if (blossomStarted) return;
-  blossomStarted = true;
+  // update center orb
+  const sub = document.getElementById('bl-orb-sub');
+  if (sub) sub.textContent = S.xp.toLocaleString() + ' xp · ' + S.streak + 'd streak';
 
-  const intro = document.getElementById('intro');
-  intro.classList.add('out');
+  const fallback = [
+    {text:"drawing is your most practiced art",     tag:"habit"},
+    {text:"aim training hasn't seen you in a while", tag:"nudge"},
+    {text:"creativity is your highest stat",         tag:"trend"},
+    {text:"sketchbook nearly half full",             tag:"goal"},
+    {text:"photography is just waking up",           tag:"habit"},
+    {text:"keep the streak alive today",             tag:"streak"},
+    {text:"platinum is a long road, but moving",     tag:"goal"},
+  ];
 
-  setTimeout(() => {
-    intro.style.display = 'none';
-    const screen = document.getElementById('blossom-screen');
-    screen.classList.remove('hidden');
-    screen.style.opacity = '0';
-    screen.style.transition = 'opacity .5s ease';
-    requestAnimationFrame(() => { screen.style.opacity = '1'; });
-
-    // update center orb text
-    document.getElementById('bl-co-sub').textContent = S.xp.toLocaleString() + ' xp · ' + S.streak + 'd streak';
-    document.getElementById('bl-xp-bar').textContent = '✦ ' + S.xp.toLocaleString() + ' xp   ·   🔥 ' + S.streak + ' day streak';
-
-    positionCenterOrb();
-    buildBubbleEls();
-    updateBubblePositions();
-
-    requestAnimationFrame(() => {
-      blossomBubbles.forEach(({ el }) => { el.style.opacity = '1'; });
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1000,
+        messages: [{ role: 'user', content: buildInsightPrompt() }]
+      })
     });
+    const data = await res.json();
+    const raw  = data.content?.find(b => b.type === 'text')?.text || '[]';
+    const insights = JSON.parse(raw.replace(/```json|```/g,'').trim());
+    if (loader) loader.style.display = 'none';
+    if (loaderText) loaderText.style.display = 'none';
+    spawnBlossomBubbles(insights.length ? insights : fallback);
+  } catch(e) {
+    if (loader) loader.style.display = 'none';
+    if (loaderText) loaderText.style.display = 'none';
+    spawnBlossomBubbles(fallback);
+  }
 
-    blossomAnimate();
-  }, 750);
+  blossomLoading = false;
 }
 
-function initBlossom() {
-  window.addEventListener('resize', () => {
-    if (blossomStarted) { positionCenterOrb(); updateBubblePositions(); }
-  });
+// called when switching away from world tab
+function pauseBlossom() {
+  cancelAnimationFrame(blossomFrame);
+  blossomFrame = null;
+}
+
+// called when switching back to world tab
+function resumeBlossom() {
+  if (blossomBubbles.length > 0) blossomAnimate();
+}
+
+// called on first render
+function renderBlossom() {
+  loadBlossomInsights();
 }

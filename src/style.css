@@ -121,9 +121,11 @@ body { display: flex; flex-direction: column; background: var(--bg0); color: var
 .nb:hover:not(.on) { color: var(--ink2); }
 
 /* ─── SCROLL / PANELS ────────────────────────────────────── */
-.scroll { flex: 1; overflow-y: auto; padding: 14px 18px 60px; transition: background .5s; }
+.scroll { flex: 1; overflow-y: auto; padding: 14px 18px 60px; transition: background .5s; min-height: 0; }
 .scroll::-webkit-scrollbar       { width: 3px; }
 .scroll::-webkit-scrollbar-thumb { background: var(--bg2); border-radius: 3px; }
+#panel-world ~ * { }
+#panel-world.on ~ .scroll { overflow: hidden; padding: 0; }
 
 .panel { display: none; animation: panel-in .25s ease both; }
 .panel.on { display: block; }
@@ -316,23 +318,33 @@ body { display: flex; flex-direction: column; background: var(--bg0); color: var
 
 .hidden { display: none !important; }
 
-/* ─── BLOSSOM BUBBLES ────────────────────────────────────── */
+/* ─── BLOSSOM / WORLD TAB ────────────────────────────────── */
+#panel-world { height: 100%; overflow: hidden; }
+#panel-world.on { display: flex; flex-direction: column; }
+
 .bl-bubble {
   position: absolute; border-radius: 50%;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  cursor: pointer; overflow: hidden;
-  border: 1.5px solid transparent;
+  cursor: default; overflow: hidden; border: 1px solid transparent;
   transition: transform .2s ease;
-  z-index: 2;
 }
 .bl-bubble::after {
   content: ''; position: absolute; inset: 0;
-  background: radial-gradient(circle at 32% 28%, rgba(255,255,255,.18), transparent 55%);
+  background: radial-gradient(circle at 32% 26%, rgba(255,255,255,.2), transparent 55%);
   pointer-events: none;
 }
-.bl-bubble:hover { transform: scale(1.1) !important; z-index: 10; }
-.bl-b-icon  { font-size: 17px; margin-bottom: 3px; position: relative; z-index: 1; }
-.bl-b-label { font-size: 10px; font-weight: 500; text-align: center; position: relative; z-index: 1; line-height: 1.3; padding: 0 4px; }
-.bl-b-val   { font-family: 'Libre Baskerville', serif; font-style: italic; font-size: 11px; position: relative; z-index: 1; margin-top: 1px; }
+.bl-bubble:hover { transform: scale(1.07) !important; z-index: 10; }
 
-#blossom-tooltip.show { opacity: 1 !important; }
+.bl-btext {
+  font-family: 'Libre Baskerville', serif; font-style: italic;
+  text-align: center; line-height: 1.45; padding: 14px;
+  position: relative; z-index: 1;
+}
+.bl-btag {
+  position: absolute; bottom: 10px;
+  font-size: 9px; letter-spacing: .08em; text-transform: uppercase;
+  opacity: .55; z-index: 1; font-family: 'DM Sans', sans-serif; font-style: normal;
+}
+
+@keyframes bl-spin  { from { transform: rotate(0deg); }   to { transform: rotate(360deg); } }
+@keyframes bl-pulse { 0%,100% { opacity: .4; } 50% { opacity: .9; } }
