@@ -2,7 +2,7 @@
 
 > *your life terminal*
 
-A personal life OS — track your hobbies, goals, and daily quests with a soft, illustrated aesthetic inspired by the Kamiina Botan anime. Powered by Claude AI for a live companion, daily notes, and intro greetings.
+A personal life OS - track your hobbies, goals, and daily quests with a soft, illustrated aesthetic inspired by the Kamiina Botan anime. Powered by Claude AI for a live companion, daily notes, and intro greetings.
 
 ---
 
@@ -11,12 +11,12 @@ A personal life OS — track your hobbies, goals, and daily quests with a soft, 
 hanagara is a single-page web app that lives in your browser. No backend, no accounts — everything is saved to `localStorage`. It's yours.
 
 **tabs:**
-- **home** — AI-generated daily note, your auto-calculated stats, today's quests
-- **hobbies** — aim training, ranking up, drawing, working out, photography — log sessions, earn XP, level up
-- **goals** — long-term quests with progress tracking
-- **todos** — daily checklist with XP rewards
-- **companion** — live AI chat that knows your stats and history
-- **settings** — 5 color themes (garden, dusk, ember, bloom, slate)
+- **home** - AI-generated daily note, your auto-calculated stats, today's quests
+- **hobbies** - aim training, ranking up, drawing, working out, photography — log sessions, earn XP, level up
+- **goals** - long-term quests with progress tracking
+- **todos** - daily checklist with XP rewards
+- **companion** - live AI chat that knows your stats and history
+- **settings** - 5 color themes (garden, dusk, ember, bloom, slate)
 
 ---
 
