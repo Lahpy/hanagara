@@ -100,8 +100,6 @@
     <header class="hdr">
       <span class="hdr-brand">my world</span>
       <div class="hdr-right">
-        <div class="chip chip-fire">🔥 <span id="sval">0</span>d</div>
-        <div class="chip chip-xp">✦ <span id="xval">0</span></div>
         <button class="icon-btn" onclick="nav('settings')" aria-label="settings"><i class="ti ti-settings"></i></button>
       </div>
     </header>
@@ -111,6 +109,7 @@
       <button class="nb"     onclick="nav('hobbies')">hobbies</button>
       <button class="nb"     onclick="nav('goals')">goals</button>
       <button class="nb"     onclick="nav('todos')">todos</button>
+      <button class="nb"     onclick="nav('music')">music</button>
       <button class="nb"     onclick="nav('history')">history</button>
       <button class="nb"     onclick="nav('settings')">settings</button>
     </nav>
@@ -119,12 +118,50 @@
 
       <!-- WORLD (timeline) -->
       <div class="panel on" id="panel-world">
-        <div id="stat-grid" class="stat-grid" style="padding:14px 24px 0;flex-shrink:0"></div>
+
+        <!-- sky header -->
+        <div id="sky-header">
+          <div id="sky-bg"></div>
+          <div id="sky-particles"></div>
+          <div id="sky-content">
+            <div id="sky-greeting"></div>
+            <div id="sky-date"></div>
+            <div id="sky-weather-row">
+              <div id="sky-left"></div>
+              <div id="sky-condition"></div>
+              <div id="sky-right"></div>
+            </div>
+          </div>
+        </div>
 
         <!-- 30-day streak grid -->
         <div id="streak-grid-wrap">
           <div id="streak-grid-label">last 30 days</div>
           <div id="streak-grid"></div>
+        </div>
+
+        <!-- now strip — quick glance cards -->
+        <div id="now-strip">
+          <div class="now-card" id="now-todos" onclick="nav('todos')">
+            <div class="now-card-label">today</div>
+            <div class="now-card-value" id="now-todos-val">—</div>
+            <div class="now-card-sub" id="now-todos-sub"></div>
+          </div>
+          <div class="now-card" id="now-music" onclick="nav('music')">
+            <div class="now-card-label">last played</div>
+            <div class="now-card-value" id="now-music-val">—</div>
+            <div class="now-card-sub" id="now-music-sub"></div>
+          </div>
+          <div class="now-card" id="now-hobby" onclick="nav('hobbies')">
+            <div class="now-card-label">last session</div>
+            <div class="now-card-value" id="now-hobby-val">—</div>
+            <div class="now-card-sub" id="now-hobby-sub"></div>
+          </div>
+          <div class="now-card" id="now-goal" onclick="nav('goals')">
+            <div class="now-card-label">top goal</div>
+            <div class="now-card-value" id="now-goal-val">—</div>
+            <div class="now-card-sub" id="now-goal-sub"></div>
+          </div>
         </div>
 
         <!-- timeline strip -->
@@ -173,9 +210,69 @@
         </div>
       </div>
 
+      <!-- MUSIC -->
+      <div class="panel hidden" id="panel-music">
+
+        <!-- input bar — full width above columns -->
+        <div class="music-input-wrap">
+          <input class="music-in" id="music-in" placeholder="artist, song, album... anything" />
+          <button class="music-add-btn" id="music-add-btn" onclick="addMusicEntry()">log</button>
+        </div>
+        <div class="music-parsing-msg hidden" id="music-parsing-msg">identifying...</div>
+
+        <!-- two columns -->
+        <div class="music-columns" id="music-columns">
+
+          <!-- LEFT: sorted log -->
+          <div class="music-col-left">
+            <div class="music-sort-bar">
+              <span class="music-sort-label">sort by</span>
+              <button class="music-sort-btn active" data-sort="recent" onclick="setMusicSort('recent')">recent</button>
+              <button class="music-sort-btn" data-sort="genre"  onclick="setMusicSort('genre')">genre</button>
+              <button class="music-sort-btn" data-sort="artist" onclick="setMusicSort('artist')">artist</button>
+              <button class="music-sort-btn" data-sort="mood"   onclick="setMusicSort('mood')">mood</button>
+            </div>
+            <div id="music-log-list"></div>
+          </div>
+
+          <!-- RIGHT: shareable profile card -->
+          <div class="music-col-right">
+            <div class="music-card" id="music-card">
+
+              <div class="mc-header">
+                <div class="mc-title">music taste</div>
+                <div class="mc-date" id="mc-date"></div>
+              </div>
+
+              <div class="mc-identity" id="mc-identity"></div>
+
+              <!-- pie chart -->
+              <div class="mc-pie-wrap">
+                <canvas id="mc-pie" width="160" height="160"></canvas>
+                <div class="mc-pie-legend" id="mc-pie-legend"></div>
+              </div>
+
+              <!-- artists -->
+              <div class="mc-section-label">top artists</div>
+              <div id="mc-artists"></div>
+
+              <!-- moods -->
+              <div class="mc-section-label" style="margin-top:14px">moods</div>
+              <div class="mc-moods" id="mc-moods"></div>
+
+              <!-- stats row -->
+              <div class="mc-stats" id="mc-stats"></div>
+
+              <div class="mc-footer">hanagara</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
       <!-- HISTORY -->
       <div class="panel hidden" id="panel-history">
-        <p class="eyebrow" style="margin-top:0">xp history</p>
+        <p class="eyebrow" style="margin-top:0">activity log</p>
         <div id="history-list"></div>
       </div>
 

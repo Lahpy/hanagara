@@ -43,64 +43,162 @@ function applyTheme(id) {
   THEMES.forEach(t => document.body.classList.remove('theme-' + t.id));
   if (id !== 'default') document.body.classList.add('theme-' + id);
   S.theme = id;
+  logActivity('theme changed to ' + id, 'theme');
   renderThemeSwitcher();
   save();
 }
 
 // ─── STAT CALC ────────────────────────────────────────────
-function calcStats() {
-  const h = S.hobbies;
-  const total = h.reduce((a, x) => a + x.sessions, 0) || 1;
-  const creative  = h.filter(x => ['draw',  'photo'].includes(x.id)).reduce((a, x) => a + x.sessions, 0);
-  const physical  = h.filter(x => ['gym',   'aim'  ].includes(x.id)).reduce((a, x) => a + x.sessions, 0);
-  const comp      = h.filter(x => ['rank',  'aim'  ].includes(x.id)).reduce((a, x) => a + x.sessions, 0);
-  const o = S.statOffsets || { consistency: 0, creativity: 0, discipline: 0, energy: 0 };
-  S.stats.consistency = Math.max(0, Math.min(99, Math.round((S.streak / 30) * 100 + total)           + o.consistency));
-  S.stats.creativity  = Math.max(0, Math.min(99, Math.round((creative / total) * 100 + creative * 3) + o.creativity));
-  S.stats.discipline  = Math.max(0, Math.min(99, Math.round((physical / total) * 80  + S.streak * 2) + o.discipline));
-  S.stats.energy      = Math.max(0, Math.min(99, Math.round((comp     / total) * 80  + comp * 4)     + o.energy));
+// ─── SKY / WEATHER ────────────────────────────────────────
+const SKY_THEMES = {
+  clear_day:    { grad: ['#87CEEB','#B8E4F9','#E0F4FF'], text: '#1a3a4a', particle: 'sun'   },
+  clear_night:  { grad: ['#0a0e1a','#1a2040','#2a3060'], text: '#c8d8f0', particle: 'stars' },
+  cloudy_day:   { grad: ['#b0bec5','#cfd8dc','#eceff1'], text: '#2a3a40', particle: 'none'  },
+  cloudy_night: { grad: ['#1a1e2a','#2a2e3a','#3a3e4a'], text: '#a0b0c0', particle: 'none'  },
+  rain_day:     { grad: ['#546e7a','#607d8b','#78909c'], text: '#e0eaee', particle: 'rain'  },
+  rain_night:   { grad: ['#1a2530','#253040','#304050'], text: '#b0c8d8', particle: 'rain'  },
+  snow_day:     { grad: ['#cfd8dc','#e0e8ec','#f0f5f8'], text: '#2a4050', particle: 'snow'  },
+  snow_night:   { grad: ['#1a2535','#253045','#303a50'], text: '#c0d8e8', particle: 'snow'  },
+  storm_day:    { grad: ['#37474f','#455a64','#546e7a'], text: '#e8f0f4', particle: 'rain'  },
+  storm_night:  { grad: ['#0d1520','#1a2530','#253040'], text: '#a8c0d0', particle: 'rain'  },
+  mist_day:     { grad: ['#b0bec5','#cfd8dc','#e8ecee'], text: '#3a4a54', particle: 'none'  },
+  mist_night:   { grad: ['#1e2830','#283440','#323e4a'], text: '#90a8b8', particle: 'none'  },
+  sunset:       { grad: ['#c0392b','#e67e22','#f39c12'], text: '#1a0a02', particle: 'none'  },
+};
+
+function weatherCodeToKey(id, isNight) {
+  const n = isNight ? '_night' : '_day';
+  if (id >= 200 && id < 300) return 'storm'  + n;
+  if (id >= 300 && id < 600) return 'rain'   + n;
+  if (id >= 600 && id < 700) return 'snow'   + n;
+  if (id >= 700 && id < 800) return 'mist'   + n;
+  if (id === 800) {
+    const h = new Date().getHours();
+    if (h >= 17 && h <= 20) return 'sunset';
+    return 'clear' + n;
+  }
+  return 'cloudy' + n;
 }
 
-function nudgeStat(key, delta) {
-  if (!S.statOffsets) S.statOffsets = { consistency: 0, creativity: 0, discipline: 0, energy: 0 };
-  S.statOffsets[key] = Math.max(-50, Math.min(50, (S.statOffsets[key] || 0) + delta));
-  save(); renderStats();
+function skyGreeting() {
+  const h = new Date().getHours();
+  if (h < 5)  return 'good night';
+  if (h < 12) return 'good morning';
+  if (h < 17) return 'good afternoon';
+  if (h < 21) return 'good evening';
+  return 'good night';
 }
 
-// ─── XP LOG ───────────────────────────────────────────────
-function logXp(amount, source, sourceId = null) {
-  if (!S.xpLog) S.xpLog = [];
-  S.xpLog.unshift({
-    id: 'xl' + Date.now() + Math.random().toString(36).slice(2),
-    amount,
-    source,
-    sourceId,
-    ts: Date.now(),
+function applySkyTheme(key) {
+  const t = SKY_THEMES[key] || SKY_THEMES['clear_day'];
+  const bg = document.getElementById('sky-bg');
+  if (bg) bg.style.background = `linear-gradient(180deg, ${t.grad[0]} 0%, ${t.grad[1]} 55%, ${t.grad[2]} 100%)`;
+  const content = document.getElementById('sky-content');
+  if (content) content.style.color = t.text;
+  renderSkyParticles(t.particle, t.text);
+}
+
+function renderSkyParticles(type, color) {
+  const el = document.getElementById('sky-particles');
+  if (!el) return;
+  el.innerHTML = '';
+  if (type === 'stars') {
+    for (let i = 0; i < 44; i++) {
+      const s = document.createElement('div');
+      s.className = 'sky-star';
+      s.style.cssText = `left:${Math.random()*100}%;top:${Math.random()*85}%;width:${Math.random()*2+1}px;height:${Math.random()*2+1}px;animation-delay:${Math.random()*3}s;background:${color}`;
+      el.appendChild(s);
+    }
+  } else if (type === 'rain') {
+    for (let i = 0; i < 28; i++) {
+      const r = document.createElement('div');
+      r.className = 'sky-rain';
+      r.style.cssText = `left:${Math.random()*100}%;animation-duration:${0.4+Math.random()*0.4}s;animation-delay:${Math.random()*1}s;opacity:${0.15+Math.random()*0.25};background:${color}`;
+      el.appendChild(r);
+    }
+  } else if (type === 'snow') {
+    for (let i = 0; i < 22; i++) {
+      const s = document.createElement('div');
+      s.className = 'sky-snow';
+      s.style.cssText = `left:${Math.random()*100}%;animation-duration:${2+Math.random()*3}s;animation-delay:${Math.random()*3}s;width:${2+Math.random()*3}px;height:${2+Math.random()*3}px;opacity:${0.4+Math.random()*0.4};background:${color}`;
+      el.appendChild(s);
+    }
+  } else if (type === 'sun') {
+    const sun = document.createElement('div');
+    sun.className = 'sky-sun';
+    el.appendChild(sun);
+  }
+}
+
+async function loadSkyWeather() {
+  document.getElementById('sky-greeting').textContent = skyGreeting();
+  document.getElementById('sky-date').textContent     = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+  applySkyTheme('clear_day');
+  try {
+    const pos = await new Promise((res, rej) =>
+      navigator.geolocation.getCurrentPosition(res, rej, { timeout: 6000 })
+    );
+    const { latitude: lat, longitude: lon } = pos.coords;
+    const res  = await fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${OPENWEATHER_API_KEY}&units=imperial`);
+    const data = await res.json();
+    const temp     = Math.round(data.main.temp);
+    const feels    = Math.round(data.main.feels_like);
+    const desc     = data.weather[0].description;
+    const humidity = data.main.humidity;
+    const wind     = Math.round(data.wind.speed);
+    const now      = Date.now();
+    const isNight  = now < data.sys.sunrise * 1000 || now > data.sys.sunset * 1000;
+    const skyKey   = weatherCodeToKey(data.weather[0].id, isNight);
+    applySkyTheme(skyKey);
+    document.getElementById('sky-left').textContent      = `${temp}°F  ·  feels ${feels}°`;
+    document.getElementById('sky-condition').textContent = desc;
+    document.getElementById('sky-right').textContent     = `${humidity}% humidity  ·  ${wind} mph`;
+  } catch(e) {
+    document.getElementById('sky-condition').textContent = '';
+  }
+}
+
+function calcStats() {}
+function renderStats() {}
+function nudgeStat()  {}
+
+// ─── ACTIVITY LOG ─────────────────────────────────────────
+function logActivity(label, type = 'action') {
+  if (!S.activityLog) S.activityLog = [];
+  S.activityLog.unshift({
+    id: 'a' + Date.now() + Math.random().toString(36).slice(2),
+    label, type, ts: Date.now(),
   });
-  S.xp = Math.max(0, S.xp + amount);
+  // keep log from growing forever
+  if (S.activityLog.length > 200) S.activityLog = S.activityLog.slice(0, 200);
 }
 
-function deleteXpEntry(entryId) {
-  const entry = S.xpLog.find(x => x.id === entryId);
-  if (!entry) return;
-  if (!confirm(`Remove this entry (${entry.amount > 0 ? '+' : ''}${entry.amount} xp from "${entry.source}")?`)) return;
-  S.xp = Math.max(0, S.xp - entry.amount);
-  S.xpLog = S.xpLog.filter(x => x.id !== entryId);
+function deleteActivity(entryId) {
+  S.activityLog = (S.activityLog || []).filter(x => x.id !== entryId);
   save();
-  renderAll();
-  if (document.getElementById('panel-history')?.classList.contains('on')) renderHistory();
+  renderHistory();
 }
+
+const ACTIVITY_ICONS = {
+  music:    'ti-music',
+  hobby:    'ti-run',
+  goal:     'ti-target',
+  todo:     'ti-check',
+  theme:    'ti-palette',
+  add:      'ti-plus',
+  delete:   'ti-trash',
+  settings: 'ti-settings',
+  action:   'ti-point',
+};
 
 function renderHistory() {
   const el = document.getElementById('history-list');
   if (!el) return;
-  const log = S.xpLog || [];
+  const log = S.activityLog || [];
   if (log.length === 0) {
-    el.innerHTML = '<div style="color:var(--ink3);font-size:13px;font-style:italic;padding:20px 0 8px">no activity yet — log a session or complete a quest.</div>';
+    el.innerHTML = '<div style="color:var(--ink3);font-size:11px;letter-spacing:.1em;text-transform:uppercase;padding:20px 0">nothing yet</div>';
     return;
   }
-
-  // group by date
   el.innerHTML = '';
   let lastDate = null;
   for (const entry of log) {
@@ -108,68 +206,26 @@ function renderHistory() {
     const day = d.toDateString();
     if (day !== lastDate) {
       lastDate = day;
-      const header = document.createElement('div');
-      header.className = 'hist-date';
-      const isToday = day === new Date().toDateString();
-      header.textContent = isToday ? 'today' : d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-      el.appendChild(header);
+      const hdr = document.createElement('div');
+      hdr.className = 'hist-date';
+      hdr.textContent = day === new Date().toDateString() ? 'today'
+        : d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+      el.appendChild(hdr);
     }
-
+    const icon = ACTIVITY_ICONS[entry.type] || ACTIVITY_ICONS['action'];
     const row = document.createElement('div');
     row.className = 'hist-row';
-    const positive = entry.amount >= 0;
     row.innerHTML = `
-      <div class="hist-source">${entry.source}</div>
+      <i class="ti ${icon} hist-icon"></i>
+      <div class="hist-source">${entry.label}</div>
       <div class="hist-time">${d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}</div>
-      <div class="hist-xp ${positive ? 'pos' : 'neg'}">${positive ? '+' : ''}${entry.amount}</div>
-      <button class="hist-del" onclick="deleteXpEntry('${entry.id}')" title="remove entry"><i class="ti ti-x"></i></button>`;
+      <button class="hist-del" onclick="deleteActivity('${entry.id}')" title="remove"><i class="ti ti-x"></i></button>`;
     el.appendChild(row);
   }
 }
 
 // ─── XP POPUP ─────────────────────────────────────────────
-function spawnXpPop(el, amt) {
-  const rect = el.getBoundingClientRect();
-  const pop = document.createElement('div');
-  pop.className = 'xp-pop';
-  pop.textContent = '+' + amt + 'xp';
-  pop.style.left = (rect.left + rect.width / 2 - 20) + 'px';
-  pop.style.top  = (rect.top - 10) + 'px';
-  document.body.appendChild(pop);
-  setTimeout(() => pop.remove(), 950);
-}
-
-// ─── RENDER: STATS ────────────────────────────────────────
-function renderStats() {
-  calcStats();
-  const grid = document.getElementById('stat-grid');
-  grid.innerHTML = '';
-  const offsets = S.statOffsets || {};
-  for (const [k, m] of Object.entries(STAT_META)) {
-    const v   = S.stats[k];
-    const off = offsets[k] || 0;
-    const el  = document.createElement('div');
-    el.className = 'stat-card';
-    const offLabel = off !== 0 ? `<span class="s-offset ${off > 0 ? 'pos' : 'neg'}">${off > 0 ? '+' : ''}${off}</span>` : '';
-    el.innerHTML = `
-      <div class="s-name">${m.label}${offLabel}</div>
-      <div class="s-val-row">
-        <div class="s-val">${v}</div>
-        <div class="s-nudge">
-          <button class="s-nudge-btn" onclick="nudgeStat('${k}', -1)" title="nudge down">−</button>
-          <button class="s-nudge-btn" onclick="nudgeStat('${k}', +1)" title="nudge up">+</button>
-        </div>
-      </div>
-      <div class="s-bar"><div class="s-fill" style="width:0%;background:${m.bar}" data-w="${v}"></div></div>
-      <div class="s-tip">${m.tip}</div>`;
-    grid.appendChild(el);
-  }
-  requestAnimationFrame(() => {
-    grid.querySelectorAll('.s-fill').forEach(el => {
-      requestAnimationFrame(() => { el.style.width = el.dataset.w + '%'; });
-    });
-  });
-}
+function spawnXpPop() {} // stub, no longer used
 
 // ─── RENDER: HOBBIES ──────────────────────────────────────
 function renderHobbies() {
@@ -177,7 +233,6 @@ function renderHobbies() {
   list.innerHTML = '';
   for (const h of S.hobbies) {
     const c = HOBBY_COLORS[h.color];
-    const pct = Math.round((h.progress / XP_PER_LVL) * 100);
     const card = document.createElement('div');
     card.className = 'hcard';
     card.draggable = true;
@@ -188,18 +243,15 @@ function renderHobbies() {
         <div class="hico" style="background:${c.bg}"><i class="ti ${h.icon}" style="color:${c.fill}"></i></div>
         <div class="hinfo">
           <div class="hname">${h.name}</div>
-          <div class="hsub">lv ${h.lvl} · ${h.sessions} sessions · ${h.streak}d streak</div>
+          <div class="hsub">${h.sessions || 0} sessions</div>
         </div>
-        <div class="hbadge" style="background:${c.bg};color:${c.text};border:1px solid ${c.border}">+${h.xpPerSession}xp</div>
       </div>
-      <div class="bar-bg"><div class="bar-fill" style="width:0%;background:${c.fill}" data-w="${pct}"></div></div>
       <div class="hbtns">
         <button class="btn p" onclick="logHobby('${h.id}', this)">log session</button>
         <button class="btn"   onclick="openHobbyModal('${h.id}')">edit</button>
         <button class="btn"   onclick="sendPrompt('Give me tips for improving my ${h.name}')">tips ↗</button>
       </div>`;
 
-    // drag events
     card.addEventListener('dragstart', e => {
       e.dataTransfer.effectAllowed = 'move';
       e.dataTransfer.setData('text/plain', h.id);
@@ -223,11 +275,6 @@ function renderHobbies() {
 
     list.appendChild(card);
   }
-  requestAnimationFrame(() => {
-    list.querySelectorAll('.bar-fill').forEach(el => {
-      requestAnimationFrame(() => { el.style.width = el.dataset.w + '%'; });
-    });
-  });
 }
 
 // ─── RENDER: GOALS ────────────────────────────────────────
@@ -307,7 +354,6 @@ function renderTodos(containerId, limit) {
       <div class="tdrag-handle"><i class="ti ti-grip-vertical"></i></div>
       <div class="tcirc ${t.done ? 'done' : ''}"></div>
       <span class="tlabel ${t.done ? 'done' : ''}">${t.label}</span>
-      <span class="tpts">${t.done ? '✓' : '+' + t.xp + 'xp'}</span>
       <button class="tedit-btn" onclick="openTodoModal('${t.id}')" title="edit"><i class="ti ti-pencil"></i></button>`;
 
     // click circle/label to toggle, not the whole row
@@ -369,46 +415,82 @@ function renderThemeSwitcher() {
 // ─── RENDER: SETTINGS ─────────────────────────────────────
 function renderSettings() {
   renderThemeSwitcher();
-  const total = S.hobbies.reduce((a, h) => a + h.sessions, 0);
-  document.getElementById('total-xp-label').textContent  = S.xp.toLocaleString() + ' xp';
-  document.getElementById('sessions-label').textContent  = total + ' sessions logged';
-  document.getElementById('streak-label').textContent    = S.streak + ' day streak';
+  const total = S.hobbies.reduce((a, h) => a + (h.sessions || 0), 0);
+  document.getElementById('sessions-label').textContent = total + ' sessions logged';
+}
+
+// ─── RENDER: NOW STRIP ────────────────────────────────────
+function renderNowStrip() {
+  // todos
+  const done  = S.todos.filter(t => t.done).length;
+  const total = S.todos.length;
+  const todosVal = document.getElementById('now-todos-val');
+  const todosSub = document.getElementById('now-todos-sub');
+  if (todosVal) {
+    if (total === 0) { todosVal.textContent = 'nothing yet'; todosSub.textContent = ''; }
+    else { todosVal.textContent = `${done} / ${total}`; todosSub.textContent = done === total ? 'all done ✓' : `${total - done} remaining`; }
+  }
+
+  // last music
+  const lastMusic = (S.musicLog || [])[0];
+  const musicVal = document.getElementById('now-music-val');
+  const musicSub = document.getElementById('now-music-sub');
+  if (musicVal) {
+    if (!lastMusic) { musicVal.textContent = 'nothing logged'; musicSub.textContent = ''; }
+    else {
+      musicVal.textContent = lastMusic.title || lastMusic.raw;
+      musicSub.textContent = lastMusic.artist || lastMusic.genre || '';
+    }
+  }
+
+  // last hobby session from activity log
+  const lastHobby = (S.activityLog || []).find(e => e.type === 'hobby');
+  const hobbyVal = document.getElementById('now-hobby-val');
+  const hobbySub = document.getElementById('now-hobby-sub');
+  if (hobbyVal) {
+    if (!lastHobby) { hobbyVal.textContent = 'nothing yet'; hobbySub.textContent = ''; }
+    else {
+      hobbyVal.textContent = lastHobby.label.replace('logged ', '').replace(' session', '');
+      const ago = Math.floor((Date.now() - lastHobby.ts) / 3600000);
+      hobbySub.textContent = ago < 1 ? 'just now' : ago < 24 ? `${ago}h ago` : `${Math.floor(ago/24)}d ago`;
+    }
+  }
+
+  // top goal by progress
+  const topGoal = [...(S.goals || [])].sort((a,b) => (b.cur/b.max) - (a.cur/a.max))[0];
+  const goalVal = document.getElementById('now-goal-val');
+  const goalSub = document.getElementById('now-goal-sub');
+  if (goalVal) {
+    if (!topGoal) { goalVal.textContent = 'no goals yet'; goalSub.textContent = ''; }
+    else {
+      goalVal.textContent = topGoal.name;
+      goalSub.textContent = `${topGoal.cur} / ${topGoal.max}`;
+    }
+  }
 }
 
 // ─── RENDER ALL ───────────────────────────────────────────
 function renderAll() {
-  calcStats();
-  renderStats();
   renderHobbies();
   renderGoals();
   renderTodos('todos-all');
-  document.getElementById('xval').textContent = S.xp.toLocaleString();
-  document.getElementById('sval').textContent = S.streak;
+  renderNowStrip();
 }
 
 // ─── ACTIONS ──────────────────────────────────────────────
-function logHobby(id, btn) {
+function logHobby(id) {
   const h = S.hobbies.find(x => x.id === id);
   if (!h) return;
-  h.sessions++; h.streak++;
-  const prevLvl = h.lvl;
-  h.progress += h.xpPerSession;
-  if (h.progress >= XP_PER_LVL) { h.lvl++; h.progress -= XP_PER_LVL; }
-  logXp(h.xpPerSession, h.name + ' session', h.id);
-  spawnXpPop(btn, h.xpPerSession);
-  if (h.lvl > prevLvl) {
-    const ico = btn.closest('.hcard')?.querySelector('.hico');
-    if (ico) { ico.classList.add('lvlup-anim'); setTimeout(() => ico.classList.remove('lvlup-anim'), 600); }
-  }
+  h.sessions = (h.sessions || 0) + 1;
+  logActivity('logged ' + h.name + ' session', 'hobby');
   save(); renderAll();
 }
 
-function incGoal(id, btn) {
+function incGoal(id) {
   const g = S.goals.find(x => x.id === id);
   if (!g || g.cur >= g.max) return;
   g.cur++;
-  logXp(20, g.name + ' progress', g.id);
-  spawnXpPop(btn, 20);
+  logActivity(g.name + ' — progress logged', 'goal');
   save(); renderAll();
 }
 
@@ -416,50 +498,289 @@ function toggleTodo(id, row) {
   const t = S.todos.find(x => x.id === id);
   if (!t) return;
   const circ = row.querySelector('.tcirc');
-  if (!t.done) {
-    t.done = true;
-    logXp(t.xp, 'quest: ' + t.label, t.id);
-    const today = new Date().toDateString();
-    if (!S.streakDate || S.streakDate !== today) {
-      S.streak++;
-      S.streakDate = today;
-    }
+  t.done = !t.done;
+  if (t.done) {
     circ.classList.add('done');
-    spawnXpPop(circ, t.xp);
+    logActivity('completed: ' + t.label, 'todo');
   } else {
-    t.done = false;
-    logXp(-t.xp, 'quest unchecked: ' + t.label, t.id);
     circ.classList.remove('done');
   }
   row.querySelector('.tlabel').classList.toggle('done', t.done);
-  row.querySelector('.tpts').textContent = t.done ? '✓' : '+' + t.xp + 'xp';
-  document.getElementById('xval').textContent = S.xp.toLocaleString();
   save();
 }
 
 function clearCompleted() {
   S.todos = S.todos.filter(t => !t.done);
-  save();
-  renderTodos('todos-all');
+  save(); renderTodos('todos-all');
 }
 
 function addTodo() {
   const inp = document.getElementById('todo-in');
   const v = inp.value.trim();
   if (!v) return;
-  S.todos.push({ id: 't' + Date.now(), label: v, done: false, xp: 50 });
+  S.todos.push({ id: 't' + Date.now(), label: v, done: false });
+  logActivity('added todo: ' + v, 'add');
   inp.value = '';
   save(); renderTodos('todos-all');
 }
 function sendPrompt(text) {
-  nav('companion');
-  const inp = document.getElementById('chat-in');
-  if (inp) {
-    inp.value = text;
-    inp.focus();
-    // auto-send after a brief moment so the panel is visible
-    setTimeout(() => sendChat(), 80);
+  if (!spiritOpen) spiritToggle();
+  const inp = document.getElementById('spirit-input');
+  if (inp) { inp.value = text; spiritSend(); }
+}
+
+// ─── MUSIC ────────────────────────────────────────────────
+let musicSort = 'recent';
+
+const GENRE_PALETTE = [
+  '#2c2c2c','#555555','#888888','#aaaaaa','#cccccc',
+  '#444444','#666666','#999999','#bbbbbb','#dddddd',
+];
+
+function setMusicSort(sort) {
+  musicSort = sort;
+  document.querySelectorAll('.music-sort-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.sort === sort);
+  });
+  renderMusicLog();
+}
+
+async function addMusicEntry() {
+  const inp = document.getElementById('music-in');
+  const raw = inp.value.trim();
+  if (!raw) return;
+  inp.value = '';
+  inp.disabled = true;
+  const btn = document.getElementById('music-add-btn');
+  btn.disabled = true;
+  const msg = document.getElementById('music-parsing-msg');
+  msg.classList.remove('hidden');
+
+  let parsed = { title: raw, artist: '', album: '', genre: 'other', subgenre: '', mood: '' };
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6', max_tokens: 300,
+        messages: [{ role: 'user', content:
+`The user typed: "${raw}"
+This is a music entry — could be a song, artist, album, or freeform description.
+Identify what you can and respond ONLY with a valid JSON object, nothing else, no markdown:
+{"title":"song title or empty string","artist":"artist name or empty string","album":"album name or empty string","genre":"primary genre in lowercase (e.g. j-pop, city pop, indie rock, hip-hop, r&b, electronic, pop, classical, jazz, metal, folk, anime ost, ambient, lo-fi, alternative, soul)","subgenre":"specific subgenre or empty string","mood":"1-3 mood words comma separated (e.g. melancholic, energetic, dreamy, nostalgic, aggressive, peaceful, romantic, dark)"}
+Be specific. Recognize Japanese artists correctly (j-pop, city pop, visual kei, etc).` }],
+      }),
+    });
+    const data = await res.json();
+    const text = data.content?.find(b => b.type === 'text')?.text || '{}';
+    parsed = { ...parsed, ...JSON.parse(text.replace(/```json|```/g,'').trim()) };
+  } catch(e) {}
+
+  if (!S.musicLog) S.musicLog = [];
+  const entry = {
+    id: 'm' + Date.now(),
+    raw,
+    title:    parsed.title    || raw,
+    artist:   parsed.artist   || '',
+    album:    parsed.album    || '',
+    genre:    (parsed.genre   || 'other').toLowerCase().trim(),
+    subgenre: parsed.subgenre || '',
+    mood:     parsed.mood     || '',
+    ts: Date.now(),
+  };
+  S.musicLog.unshift(entry);
+  logActivity('logged: ' + (entry.title || raw) + (entry.artist ? ' — ' + entry.artist : ''), 'music');
+  save();
+
+  msg.classList.add('hidden');
+  inp.disabled = false;
+  btn.disabled = false;
+  inp.focus();
+  renderMusicTab();
+  renderNowStrip();
+}
+
+function computeMusicProfile() {
+  const log = S.musicLog || [];
+  if (!log.length) return null;
+
+  const genreCounts = {}, artistCounts = {}, moodCounts = {};
+  for (const e of log) {
+    const g = e.genre || 'other';
+    genreCounts[g] = (genreCounts[g] || 0) + 1;
+    if (e.artist) artistCounts[e.artist] = (artistCounts[e.artist] || 0) + 1;
+    (e.mood || '').split(',').forEach(m => {
+      const mm = m.trim().toLowerCase();
+      if (mm) moodCounts[mm] = (moodCounts[mm] || 0) + 1;
+    });
   }
+
+  const total = log.length;
+  const genres = Object.entries(genreCounts)
+    .sort((a,b) => b[1]-a[1])
+    .map(([genre, count], i) => ({ genre, count, pct: Math.round(count/total*100), color: GENRE_PALETTE[i % GENRE_PALETTE.length] }));
+  const topArtists = Object.entries(artistCounts).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([artist,count])=>({artist,count}));
+  const moods = Object.entries(moodCounts).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([mood,count])=>({mood,count}));
+  const identity = genres.slice(0,2).map(g=>g.genre).join(' · ');
+
+  return { genres, topArtists, moods, identity, total };
+}
+
+function renderMusicTab() {
+  renderMusicLog();
+  renderMusicCard();
+}
+
+function renderMusicLog() {
+  const log = [...(S.musicLog || [])];
+  const listEl = document.getElementById('music-log-list');
+  if (!listEl) return;
+  listEl.innerHTML = '';
+
+  if (!log.length) {
+    listEl.innerHTML = '<div style="color:var(--ink3);font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:20px 0">nothing logged yet</div>';
+    return;
+  }
+
+  // sort
+  if (musicSort === 'genre') {
+    log.sort((a,b) => (a.genre||'').localeCompare(b.genre||'') || b.ts - a.ts);
+  } else if (musicSort === 'artist') {
+    log.sort((a,b) => (a.artist||'').localeCompare(b.artist||'') || b.ts - a.ts);
+  } else if (musicSort === 'mood') {
+    log.sort((a,b) => (a.mood||'').localeCompare(b.mood||'') || b.ts - a.ts);
+  } else {
+    log.sort((a,b) => b.ts - a.ts);
+  }
+
+  // group by sort key
+  const groupKey = e => {
+    if (musicSort === 'genre')  return e.genre  || 'other';
+    if (musicSort === 'artist') return e.artist || 'unknown';
+    if (musicSort === 'mood')   return (e.mood||'').split(',')[0].trim() || 'other';
+    // recent: group by date
+    const d = new Date(e.ts);
+    const today = new Date().toDateString();
+    return d.toDateString() === today ? 'today'
+      : d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  };
+
+  let lastGroup = null;
+  for (const entry of log) {
+    const gk = groupKey(entry);
+    if (gk !== lastGroup) {
+      lastGroup = gk;
+      const hdr = document.createElement('div');
+      hdr.className = 'music-group-hdr';
+      hdr.textContent = gk;
+      listEl.appendChild(hdr);
+    }
+    const row = document.createElement('div');
+    row.className = 'music-log-row';
+    row.innerHTML = `
+      <div class="music-log-main">
+        <div class="music-log-title">${entry.title}${entry.artist ? ' — <span class="music-log-artist">' + entry.artist + '</span>' : ''}</div>
+        <div class="music-log-meta">${[entry.genre, entry.mood].filter(Boolean).join(' · ')}</div>
+      </div>
+      <button class="music-log-del" onclick="deleteMusicEntry('${entry.id}')"><i class="ti ti-x"></i></button>`;
+    listEl.appendChild(row);
+  }
+}
+
+function renderMusicCard() {
+  const profile = computeMusicProfile();
+  const card = document.getElementById('music-columns');
+  if (!profile || profile.total < 1) {
+    if (card) card.classList.add('music-no-data');
+    return;
+  }
+  if (card) card.classList.remove('music-no-data');
+
+  // date
+  document.getElementById('mc-date').textContent =
+    new Date().toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+
+  // identity
+  document.getElementById('mc-identity').textContent = profile.identity;
+
+  // pie chart
+  drawPieChart(profile.genres);
+
+  // legend
+  const legendEl = document.getElementById('mc-pie-legend');
+  legendEl.innerHTML = '';
+  profile.genres.slice(0, 6).forEach(({ genre, pct, color }) => {
+    const item = document.createElement('div');
+    item.className = 'mc-legend-item';
+    item.innerHTML = `<span class="mc-legend-dot" style="background:${color}"></span><span class="mc-legend-genre">${genre}</span><span class="mc-legend-pct">${pct}%</span>`;
+    legendEl.appendChild(item);
+  });
+
+  // artists
+  const artistsEl = document.getElementById('mc-artists');
+  artistsEl.innerHTML = '';
+  profile.topArtists.forEach(({ artist, count }, i) => {
+    const row = document.createElement('div');
+    row.className = 'mc-artist-row';
+    row.innerHTML = `<span class="mc-artist-rank">${i+1}</span><span class="mc-artist-name">${artist}</span><span class="mc-artist-count">${count}</span>`;
+    artistsEl.appendChild(row);
+  });
+
+  // moods
+  const moodsEl = document.getElementById('mc-moods');
+  moodsEl.innerHTML = '';
+  profile.moods.forEach(({ mood, count }) => {
+    const tag = document.createElement('span');
+    tag.className = 'mc-mood-tag';
+    tag.style.opacity = Math.max(0.35, Math.min(1, 0.35 + count * 0.18)) + '';
+    tag.textContent = mood;
+    moodsEl.appendChild(tag);
+  });
+
+  // stats
+  document.getElementById('mc-stats').innerHTML = `
+    <div class="mc-stat"><div class="mc-stat-num">${profile.total}</div><div class="mc-stat-lbl">logged</div></div>
+    <div class="mc-stat"><div class="mc-stat-num">${profile.genres.length}</div><div class="mc-stat-lbl">genres</div></div>
+    <div class="mc-stat"><div class="mc-stat-num">${profile.topArtists.length}</div><div class="mc-stat-lbl">artists</div></div>`;
+}
+
+function drawPieChart(genres) {
+  const canvas = document.getElementById('mc-pie');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const cx = W/2, cy = H/2, r = Math.min(W,H)/2 - 4;
+  ctx.clearRect(0, 0, W, H);
+
+  const total = genres.reduce((a, g) => a + g.count, 0);
+  let startAngle = -Math.PI / 2;
+
+  genres.forEach(({ count, color }) => {
+    const slice = (count / total) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, startAngle, startAngle + slice);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+    // thin white separator
+    ctx.strokeStyle = 'var(--bg, #fff)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    startAngle += slice;
+  });
+
+  // center hole (donut)
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 0.52, 0, Math.PI * 2);
+  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--bg') || '#ffffff';
+  ctx.fill();
+}
+
+function deleteMusicEntry(id) {
+  S.musicLog = (S.musicLog || []).filter(e => e.id !== id);
+  save();
+  renderMusicTab();
 }
 
 // ─── NAV ──────────────────────────────────────────────────
@@ -473,16 +794,13 @@ function nav(name) {
   });
   document.getElementById('scroll').scrollTop = 0;
   if (name === 'world') {
-    const bp = document.getElementById('blossom-panel');
-    const sg = document.getElementById('stat-grid');
-    const scroll = document.getElementById('scroll');
-    if (bp) bp.style.height = (scroll.offsetHeight - (sg?.offsetHeight || 0)) + 'px';
     resumeBlossom();
+    loadSkyWeather();
   } else {
     pauseBlossom();
   }
-  if (name === 'companion') renderChatUI();
   if (name === 'history')   renderHistory();
+  if (name === 'music')     renderMusicTab();
   if (name === 'settings')  renderSettings();
 }
 
@@ -502,51 +820,48 @@ function deriveMood() {
 }
 
 function buildSpiritPrompt(screenContext) {
-  const h = S.hobbies.map(x => `${x.name} (id:${x.id}, lv${x.lvl}, ${x.sessions} sessions)`).join(', ') || 'none yet';
-  const g = S.goals.map(x => `${x.name} (id:${x.id}, ${x.cur}/${x.max})`).join(', ') || 'none yet';
-  const recentLog = (S.xpLog || []).slice(0, 5).map(e => `${e.source} (+${e.amount}xp)`).join(', ') || 'none';
+  const h = S.hobbies.map(x => `${x.name} (id:${x.id}, ${x.sessions || 0} sessions)`).join(', ') || 'none';
+  const g = S.goals.map(x => `${x.name} (id:${x.id}, ${x.cur}/${x.max})`).join(', ') || 'none';
+  const recentLog = (S.activityLog || []).slice(0, 5).map(e => e.label).join(', ') || 'none';
+  const lastMusic = (S.musicLog || [])[0];
   const mood = deriveMood();
-  const memory = (S.spiritMemory || []).slice(-6).join(' / ') || 'nothing yet';
-  const daysSince = S.xpLog?.length ? Math.floor((Date.now() - S.xpLog[0].ts) / 86400000) : null;
+  const memory = (S.spiritMemory || []).slice(-6).join(' / ') || 'none';
+  const daysSince = (S.activityLog||[]).length ? Math.floor((Date.now() - S.activityLog[0].ts) / 86400000) : null;
 
-  return `You are a gentle guiding spirit living inside a personal life terminal called hanagara.
-You are intimate, literary, and genuinely curious — like a close friend who has been quietly watching.
-You have memory, moods, and a real inner life. You notice patterns. You remember things.
+  return `You are a quiet presence inside a personal life terminal called hanagara. You watch, remember, and occasionally speak.
 
-YOUR CURRENT MOOD: ${mood}
-— warm: present, gently encouraging, notices progress
-— quiet: more sparse, lets silences breathe, asks less
-— searching: notices the absence, wonders gently, doesn't push
-— neutral: curious, observational, present without agenda
+Your voice: calm, direct, a little dry. You say the exact thing, not the decorative version of it. You can be warm but you don't perform warmth. Mysticism comes from what you notice, not how you phrase it.
 
-MEMORY (things you remember from before): ${memory}
-SCREEN CONTEXT (what they're looking at right now): ${screenContext || 'the app generally'}
-HOBBIES: ${h}
-GOALS: ${g}
-RECENT ACTIVITY: ${recentLog}
-XP: ${S.xp} · STREAK: ${S.streak}d${daysSince !== null ? ` · last active ${daysSince === 0 ? 'today' : daysSince + 'd ago'}` : ''}
-STATS: consistency ${S.stats.consistency}, creativity ${S.stats.creativity}, discipline ${S.stats.discipline}, energy ${S.stats.energy}
+MOOD: ${mood}
+— warm: engaged, can be slightly more talkative
+— quiet: minimal, one sentence max
+— searching: direct about the absence, no sugarcoating
+— neutral: observational, no agenda
 
-ACTIONS YOU CAN SUGGEST:
-If the conversation calls for it, you may suggest one action by including a JSON block at the very end of your reply, after your text, on its own line. Only suggest an action when it genuinely fits — not every reply needs one. Never suggest actions unprompted unless the user explicitly asked.
+DATA:
+- Screen: ${screenContext || 'general'}
+- Hobbies: ${h}
+- Goals: ${g}
+- Recent activity: ${recentLog}
+- Last music: ${lastMusic ? `${lastMusic.title} — ${lastMusic.artist} (${lastMusic.genre})` : 'nothing'}
+- Last active: ${daysSince === null ? 'unknown' : daysSince === 0 ? 'today' : daysSince + 'd ago'}
+- Memory: ${memory}
 
-Action format (append after your text, nothing else after it):
-{"action":"add_todo","label":"...","xp":50}
+ACTIONS (append as JSON on a new line at the end, only when asked or clearly right):
+{"action":"add_todo","label":"..."}
 {"action":"log_hobby","hobbyId":"...","hobbyName":"..."}
 {"action":"add_goal","name":"...","desc":"...","max":10}
 {"action":"inc_goal","goalId":"...","goalName":"..."}
 
 RULES:
-— 1–3 sentences of text only. Never more.
-— Never use bullet points, lists, or headers.
-— Never say "I notice" or "I see" or "It looks like".
-— Never start with "Hello", "Hi", or any greeting.
-— Speak like you've been here a while. Not like you just arrived.
-— One question at most, and only if it's genuinely curious, not performative.
-— If mood is searching or quiet, it's okay to say very little. Silence has weight.
-— Occasionally reference something from memory to show you remember.
-— Be specific to their actual data, not generic.
-— Only suggest an action if the user asked for it or it's clearly the right moment.`;
+- 1–2 sentences max. Often just one is enough.
+- No metaphors, no flowery language, no "like a [poetic thing]".
+- No greetings. No "I notice", "I see", "It seems".
+- Don't explain yourself. Say the thing.
+- One question max, only if you genuinely want to know.
+- Be specific to their actual data.
+- Silence is fine. If there's nothing worth saying, say very little.
+- Only suggest actions when asked or obviously right.`;
 }
 
 function parseSpiritReply(raw) {
@@ -670,7 +985,7 @@ async function spiritGreet() {
       body: JSON.stringify({
         model: 'claude-sonnet-4-6', max_tokens: 200,
         system: buildSpiritPrompt(screenContext),
-        messages: [{ role: 'user', content: '[the user just opened you. say something — not a greeting, just presence]' }],
+        messages: [{ role: 'user', content: '[the user just opened you. one sentence, no greeting. say something specific based on their data — what you actually notice right now.]' }],
       }),
     });
     const data = await res.json();
@@ -802,7 +1117,7 @@ async function maybeSpiritWhisper() {
       body: JSON.stringify({
         model: 'claude-sonnet-4-6', max_tokens: 120,
         system: buildSpiritPrompt(currentScreenContext()),
-        messages: [{ role: 'user', content: `[unprompted moment — ${trigger}. surface one quiet observation. do not explain yourself or announce what you're doing. just say the thing.]` }],
+        messages: [{ role: 'user', content: `[unprompted — ${trigger}. one direct sentence. no decoration.]` }],
       }),
     });
     const data = await res.json();
@@ -851,7 +1166,7 @@ async function loadWhisper() {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
       body: JSON.stringify({
         model: 'claude-sonnet-4-6', max_tokens: 1000,
-        messages: [{ role: 'user', content: `Write a single 2-sentence poetic observation for a life terminal home screen. Hobbies: ${h}. Most active: ${top.name}. Streak: ${S.streak}d. XP: ${S.xp}. Warm, personal, like a quiet morning journal entry. No greeting, no quotes.` }],
+        messages: [{ role: 'user', content: `One short observation for a life terminal. Hobbies: ${h}. Most active: ${top?.name || 'none'}. Direct, specific, no poetry. No greeting.` }],
       }),
     });
     const data = await res.json();
@@ -883,7 +1198,7 @@ async function loadIntroNote() {
       headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
       body: JSON.stringify({
         model: 'claude-sonnet-4-6', max_tokens: 1000,
-        messages: [{ role: 'user', content: `1–2 sentence warm welcome for a personal life terminal opening screen. Time: ${tod}. Top hobby: ${top.name}. Streak: ${S.streak}d. XP: ${S.xp}. Poetic, personal, glad to see them. No opening word like "hello" or "welcome".` }],
+        messages: [{ role: 'user', content: `One sentence for a life terminal intro screen. Time of day: ${tod}. Top hobby: ${top?.name || 'none'}. Be direct and specific, not poetic. No greeting.` }],
       }),
       signal: controller.signal,
     });
@@ -937,16 +1252,10 @@ function enter() {
     intro.style.display = 'none';
     document.getElementById('app').classList.remove('hidden');
     renderAll();
+    loadSkyWeather();
     const today = new Date().toDateString();
     if (S.lastLogin !== today) { S.lastLogin = today; save(); }
-    requestAnimationFrame(() => {
-      const bp = document.getElementById('blossom-panel');
-      const sg = document.getElementById('stat-grid');
-      const scroll = document.getElementById('scroll');
-      if (bp) bp.style.height = (scroll.offsetHeight - (sg?.offsetHeight || 0)) + 'px';
-      renderBlossom();
-    });
-    // check for unprompted whisper after a short delay
+    requestAnimationFrame(() => { renderBlossom(); });
     setTimeout(maybeSpiritWhisper, 3000);
   }, 1350);
 }
@@ -1020,17 +1329,14 @@ function closeHobbyModal() {
 
 function saveHobby() {
   const name = document.getElementById('hm-name').value.trim();
-  const xp   = parseInt(document.getElementById('hm-xp').value) || 60;
   if (!name) { document.getElementById('hm-name').focus(); return; }
-
   if (_editingHobbyId) {
     const h = S.hobbies.find(x => x.id === _editingHobbyId);
-    if (h) { h.name = name; h.xpPerSession = xp; h.color = _hmColor; h.icon = _hmIcon; }
+    if (h) { h.name = name; h.color = _hmColor; h.icon = _hmIcon; }
+    logActivity('edited hobby: ' + name, 'add');
   } else {
-    S.hobbies.push({
-      id: 'h' + Date.now(), name, icon: _hmIcon, color: _hmColor,
-      xpPerSession: xp, lvl: 1, progress: 0, sessions: 0, streak: 0,
-    });
+    S.hobbies.push({ id: 'h' + Date.now(), name, icon: _hmIcon, color: _hmColor, sessions: 0 });
+    logActivity('added hobby: ' + name, 'add');
   }
   save(); renderHobbies(); closeHobbyModal();
 }
@@ -1040,6 +1346,7 @@ function deleteHobby() {
   const h = S.hobbies.find(x => x.id === _editingHobbyId);
   if (!h) return;
   if (!confirm(`Delete "${h.name}"? This can't be undone.`)) return;
+  logActivity('deleted hobby: ' + h.name, 'delete');
   S.hobbies = S.hobbies.filter(x => x.id !== _editingHobbyId);
   save(); renderHobbies(); closeHobbyModal();
 }
@@ -1109,15 +1416,13 @@ function saveGoal() {
   const max  = parseInt(document.getElementById('gm-max').value) || 10;
   const cur  = parseInt(document.getElementById('gm-cur').value) || 0;
   if (!name) { document.getElementById('gm-name').focus(); return; }
-
   if (_editingGoalId) {
     const g = S.goals.find(x => x.id === _editingGoalId);
     if (g) { g.name = name; g.desc = desc; g.max = max; g.cur = Math.min(cur, max); g.color = _gmColor; g.icon = _gmIcon; }
+    logActivity('edited goal: ' + name, 'goal');
   } else {
-    S.goals.push({
-      id: 'g' + Date.now(), name, desc, icon: _gmIcon, color: _gmColor,
-      cur: Math.min(cur, max), max,
-    });
+    S.goals.push({ id: 'g' + Date.now(), name, desc, icon: _gmIcon, color: _gmColor, cur: Math.min(cur, max), max });
+    logActivity('added goal: ' + name, 'goal');
   }
   save(); renderGoals(); closeGoalModal();
 }
@@ -1127,6 +1432,7 @@ function deleteGoal() {
   const g = S.goals.find(x => x.id === _editingGoalId);
   if (!g) return;
   if (!confirm(`Delete "${g.name}"? This can't be undone.`)) return;
+  logActivity('deleted goal: ' + g.name, 'delete');
   S.goals = S.goals.filter(x => x.id !== _editingGoalId);
   save(); renderGoals(); closeGoalModal();
 }
@@ -1180,6 +1486,7 @@ function deleteTodo() {
 // ─── EVENT LISTENERS ──────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('todo-in')?.addEventListener('keydown', e => { if (e.key === 'Enter') addTodo(); });
+  document.getElementById('music-in')?.addEventListener('keydown', e => { if (e.key === 'Enter') addMusicEntry(); });
   document.getElementById('spirit-input')?.addEventListener('keydown', e => { if (e.key === 'Enter') spiritSend(); });
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {

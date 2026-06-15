@@ -123,6 +123,7 @@ function renderStreakGrid() {
     const sq = document.createElement('div');
     sq.className = 'sg-sq' + (active ? ' sg-active' : '');
     sq.title = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + (active ? ' · active' : '');
+    sq.style.animationDelay = (i * 20) + 'ms';
     grid.appendChild(sq);
   }
 }
@@ -282,4 +283,4 @@ function saveTlNote() {
 function initBlossom()   {}
 function pauseBlossom()  {}
 function resumeBlossom() { renderTimeline(); }
-function renderBlossom() { renderTimeline(); }
+function renderBlossom() { renderTimeline(); if (typeof renderNowStrip === 'function') renderNowStrip(); }

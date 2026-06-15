@@ -2,7 +2,7 @@
 
 > *your life terminal*
 
-A personal life OS — track your hobbies, goals, and daily quests with a soft, illustrated aesthetic inspired by the Kamiina Botan anime. Powered by Claude AI for a live companion, daily notes, and intro greetings.
+A personal life OS — track your hobbies, goals, music taste, and daily life. Powered by Claude AI for a live companion, weather-aware world view, and music identity profiling.
 
 ---
 
@@ -11,26 +11,44 @@ A personal life OS — track your hobbies, goals, and daily quests with a soft, 
 hanagara is a single-page web app that lives in your browser. No backend, no accounts — everything is saved to `localStorage`. It's yours.
 
 **tabs:**
-- **home** — AI-generated daily note, your auto-calculated stats, today's quests
-- **hobbies** — aim training, ranking up, drawing, working out, photography — log sessions, earn XP, level up
-- **goals** — long-term quests with progress tracking
-- **todos** — daily checklist with XP rewards
-- **companion** — live AI chat that knows your stats and history
-- **settings** — 5 color themes (garden, dusk, ember, bloom, slate)
+- **world** — live sky based on real weather, 30-day activity grid, horizontal timeline of logged sessions
+- **hobbies** — log sessions, track what you spend time on
+- **goals** — long-term progress tracking
+- **todos** — daily checklist
+- **music** — log what you listen to, AI identifies artist/genre/mood, builds a living taste profile with pie chart
+- **history** — audit log of everything you've done in the app
+- **settings** — 6 themes, data reset
+
+**spirit** — a persistent AI companion in the bottom-right corner. Always watching, occasionally speaks unprompted. Knows your data, has memory, has moods. Can add todos, log sessions, and create goals on your behalf.
 
 ---
 
 ## running it locally
 
-Just open `index.html` in your browser. No build step, no dependencies to install.
+Serve with Live Server (VS Code extension) or any local server — don't open index.html directly as a file, the API calls won't work.
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/hanagara.git
+git clone https://github.com/Lahpy/hanagara.git
 cd hanagara
-open index.html
+# open with VS Code Live Server, or:
+python -m http.server 8000
 ```
 
-> **Note:** The AI features (companion, daily whisper, intro greeting) call the Anthropic API. To use them, you'll need to serve the app through a proxy or local server that injects your API key — or add your key directly for local-only use.
+Then open `http://localhost:8000`.
+
+---
+
+## config
+
+Create `src/config.js` (gitignored — never committed):
+
+```js
+const ANTHROPIC_API_KEY = 'your-key-here';
+const OPENWEATHER_API_KEY = 'your-key-here';
+```
+
+- Anthropic key: [console.anthropic.com](https://console.anthropic.com)
+- OpenWeather key: [openweathermap.org/api](https://openweathermap.org/api) (free)
 
 ---
 
@@ -38,11 +56,13 @@ open index.html
 
 ```
 hanagara/
-├── index.html       # app shell + markup
+├── index.html        # app shell + markup
 ├── src/
-│   ├── style.css    # all styles + themes
-│   ├── data.js      # constants, default state, theme/color configs
-│   └── app.js       # state, rendering, actions, AI calls
+│   ├── style.css     # all styles + themes
+│   ├── data.js       # constants, default state, theme/color configs
+│   ├── app.js        # state, rendering, actions, AI calls
+│   ├── blossom.js    # world tab — timeline, streak grid, sketches
+│   └── config.js     # API keys (gitignored)
 └── README.md
 ```
 
@@ -50,37 +70,52 @@ hanagara/
 
 ## themes
 
-| name    | vibe                        |
-|---------|-----------------------------|
-| garden  | warm sage and parchment     |
-| dusk    | deep purple night           |
-| ember   | dark amber firelight        |
-| bloom   | soft rose and pink          |
-| slate   | dark blue, almost terminal  |
+| name  | vibe                     |
+|-------|--------------------------|
+| white | clean, minimal, daylight |
+| warm  | paper tone, soft         |
+| dark  | deep black               |
+| dusk  | indigo night             |
+| teal  | moonlit river            |
+| stone | cool grey                |
 
 ---
 
-## design ideas — revisit later
+## design notes — revisit later
 
-### intro screen — flower bloom transition
-The intro shows a **photo frame** containing a **flower bud with leaves in the backdrop**.
-When the user enters, the flower **blossoms and expands** to fill the entire screen, transitioning into the app layout.
+### intro screen — flower bloom
+The intro shows an SVG flower bud in a photo frame with illustrated leaves.
+On enter: petals open one by one → stamen fades in → frame expands and fades → app reveals.
 
-**open questions to decide:**
-- flower rendering: SVG illustration (current approach) vs. supplying an actual photo/image
-- bloom transition style: petals opening outward from center → app fades in behind, OR flower scales up and fills whole screen like a zoom/cover wipe
-- backdrop leaves: soft + blurred (like the Vertere can photo) vs. graphic/flat (like the anime illustrations)
-- post-bloom: does the flower remain visible anywhere in the app, or fully gives way to the layout?
-
-**current implementation:** SVG-drawn flower bud + leaves, petals animate open on enter, app reveals underneath.
+**open questions:**
+- Real photo vs SVG illustration for the frame content
+- Bloom style: petals outward vs full-screen zoom wipe
+- Backdrop: blurred photographic vs graphic/flat
+- Does the flower persist anywhere after entering?
 
 ---
 
+## roadmap
 
+### personal (current focus)
+- [ ] Notes field on timeline entries (partially done)
+- [ ] Better empty states — guide new users through first setup
+- [ ] Spirit memory persistence — remember things across sessions more reliably
+- [ ] Music: album art placeholder per genre (color field per genre type)
+- [ ] Hobby session notes — add a short note when logging a session
+- [ ] Weekly recap — spirit generates a summary of the week on Sunday
+- [ ] PWA support — installable, works offline for non-AI features
+- [ ] Export data as JSON backup
 
-- [ ] weekly review screen
-- [ ] calendar / heatmap view
-- [ ] custom hobby/goal creation in-app
-- [ ] milestone badges and level-up screen
-- [ ] export data as JSON
-- [ ] PWA support (installable, offline)
+### public / sharing (future)
+The long-term vision is that each person has their own terminal they can share — a link that shows a read-only view of their world: music taste, hobbies, goals, activity. A window into who someone is.
+
+This requires:
+- **Backend + database** — user accounts, data stored server-side (Supabase or similar)
+- **Public profile URLs** — `hanagara.app/u/username` shows a shareable read-only view
+- **Auth layer** — sign in, own your data
+- **Public vs private split** — music and hobbies public, todos and spirit conversations private
+- **Share unit** — share whole terminal, or just music profile card, or just world view
+- **Onboarding** — first-run flow explaining the terminal model to new users
+
+Data structures are already shaped well for this — the music card is already designed as a shareable artifact. The main work is infrastructure, not redesign.
