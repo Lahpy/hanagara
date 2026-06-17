@@ -83,7 +83,7 @@
   <div id="app" class="hidden">
 
     <header class="hdr">
-      <span class="hdr-brand">hanagara</span>
+      <button class="hdr-brand" onclick="nav('world')" aria-label="home">hanagara</button>
       <div class="hdr-right">
         <button class="icon-btn" onclick="nav('settings')" aria-label="settings"><i class="ti ti-settings"></i></button>
       </div>
@@ -108,31 +108,63 @@
 
       <!-- WORLD -->
       <div class="panel on" id="panel-world">
+
+        <!-- forecast strip -->
+        <div id="forecast-strip">
+          <div class="eyebrow" style="margin:14px 22px 8px">forecast</div>
+          <div id="forecast-row"></div>
+          <div id="outfit-line"></div>
+        </div>
+
+        <!-- 30-day streak grid -->
         <div id="streak-grid-wrap">
           <div id="streak-grid-label">last 30 days</div>
           <div id="streak-grid"></div>
         </div>
-        <div id="now-strip">
-          <div class="now-card" id="now-todos" onclick="nav('todos')">
-            <div class="now-card-label">today</div>
-            <div class="now-card-value" id="now-todos-val">—</div>
-            <div class="now-card-sub" id="now-todos-sub"></div>
+
+        <!-- insight grid — 2x2, bigger, more context -->
+        <div id="insight-grid">
+          <div class="insight-card" id="now-todos" onclick="nav('todos')">
+            <div class="insight-hdr"><i class="ti ti-checklist"></i><span>today</span></div>
+            <div class="insight-value" id="now-todos-val">—</div>
+            <div class="insight-sub" id="now-todos-sub"></div>
+            <div class="insight-note" id="now-todos-note"></div>
           </div>
-          <div class="now-card" id="now-music" onclick="nav('music')">
-            <div class="now-card-label">last played</div>
-            <div class="now-card-value" id="now-music-val">—</div>
-            <div class="now-card-sub" id="now-music-sub"></div>
+          <div class="insight-card" id="now-goal" onclick="nav('goals')">
+            <div class="insight-hdr"><i class="ti ti-target-arrow"></i><span>top goal</span></div>
+            <div class="insight-value" id="now-goal-val">—</div>
+            <div class="insight-sub" id="now-goal-sub"></div>
+            <div class="insight-note" id="now-goal-note"></div>
           </div>
-          <div class="now-card" id="now-hobby" onclick="nav('hobbies')">
-            <div class="now-card-label">last session</div>
-            <div class="now-card-value" id="now-hobby-val">—</div>
-            <div class="now-card-sub" id="now-hobby-sub"></div>
+          <div class="insight-card" id="now-hobby" onclick="nav('hobbies')">
+            <div class="insight-hdr"><i class="ti ti-sparkles"></i><span>last session</span></div>
+            <div class="insight-value" id="now-hobby-val">—</div>
+            <div class="insight-sub" id="now-hobby-sub"></div>
+            <div class="insight-note" id="now-hobby-note"></div>
           </div>
-          <div class="now-card" id="now-goal" onclick="nav('goals')">
-            <div class="now-card-label">top goal</div>
-            <div class="now-card-value" id="now-goal-val">—</div>
-            <div class="now-card-sub" id="now-goal-sub"></div>
+          <div class="insight-card" id="now-music" onclick="nav('music')">
+            <div class="insight-hdr"><i class="ti ti-music"></i><span>last played</span></div>
+            <div class="insight-value" id="now-music-val">—</div>
+            <div class="insight-sub" id="now-music-sub"></div>
+            <div class="insight-note" id="now-music-note"></div>
           </div>
+        </div>
+
+      </div>
+
+      <!-- TIMELINE PULLUP TAB -->
+      <div id="timeline-pulltab" onclick="toggleTimelineDrawer()">
+        <span class="pulltab-label">timeline</span>
+        <i class="ti ti-chevron-up pulltab-icon"></i>
+      </div>
+
+      <!-- TIMELINE DRAWER -->
+      <div class="timeline-overlay hidden" id="timeline-overlay" onclick="closeTimelineDrawer()"></div>
+      <div class="timeline-drawer hidden" id="timeline-drawer">
+        <div class="timeline-drawer-handle" onclick="closeTimelineDrawer()"></div>
+        <div class="timeline-drawer-hdr">
+          <span>your timeline</span>
+          <button class="modal-close" onclick="closeTimelineDrawer()"><i class="ti ti-x"></i></button>
         </div>
         <div id="timeline-wrap">
           <div id="timeline-line"></div>

@@ -269,6 +269,8 @@ function skyGreeting() {
   return 'good night';
 }
 
+let _lastCoords = null;
+
 async function loadSkyWeather() {
   document.getElementById('sky-greeting').textContent = skyGreeting();
   document.getElementById('sky-date').textContent = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
@@ -276,10 +278,34 @@ async function loadSkyWeather() {
   // start ticking immediately with whatever time it is
   startSkyTicker();
 
+  if (typeof OPENWEATHER_API_KEY === 'undefined' || !OPENWEATHER_API_KEY) {
+    console.error('OPENWEATHER_API_KEY is missing from src/config.js — weather and forecast will not load.');
+    document.getElementById('sky-condition').textContent = 'add OpenWeather key in config.js';
+    const el = document.getElementById('forecast-row');
+    if (el) el.innerHTML = `<div class="forecast-error">missing API key</div>`;
+    return;
+  }
+
+  let lat, lon;
   try {
-    const pos  = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, { timeout: 6000 }));
-    const { latitude: lat, longitude: lon } = pos.coords;
+    const pos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, { timeout: 6000 }));
+    lat = pos.coords.latitude;
+    lon = pos.coords.longitude;
+    _lastCoords = { lat, lon };
+  } catch(e) {
+    console.error('geolocation error', e);
+    document.getElementById('sky-condition').textContent = '';
+    const el = document.getElementById('forecast-row');
+    if (el) el.innerHTML = `<div class="forecast-error">location unavailable: ${e.message}</div>`;
+    return;
+  }
+
+  // fire forecast independently — don't let weather's success gate it
+  loadForecast(lat, lon);
+
+  try {
     const res  = await fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${OPENWEATHER_API_KEY}&units=imperial`);
+    if (!res.ok) { console.error('weather fetch failed', res.status, await res.text()); document.getElementById('sky-condition').textContent = ''; return; }
     const data = await res.json();
 
     _skyWeatherId = data.weather[0].id;
@@ -297,12 +323,116 @@ async function loadSkyWeather() {
 
     // repaint with weather data
     paintSky();
-  } catch(e) { document.getElementById('sky-condition').textContent = ''; }
+    renderOutfitLine();
+  } catch(e) {
+    console.error('weather error', e);
+    document.getElementById('sky-condition').textContent = '';
+  }
 }
 
 function calcStats() {}
 function renderStats() {}
 function nudgeStat()  {}
+
+// ─── FORECAST STRIP ───────────────────────────────────────
+const WEATHER_ICONS = {
+  storm: 'ti-bolt', rain: 'ti-cloud-rain', snow: 'ti-snowflake',
+  mist: 'ti-cloud-fog', cloudy: 'ti-cloud', overcast: 'ti-cloud',
+  clear_day: 'ti-sun', clear_night: 'ti-moon',
+};
+
+function weatherIconKey(id, isNight) {
+  if (id >= 200 && id < 300) return 'storm';
+  if (id >= 300 && id < 600) return 'rain';
+  if (id >= 600 && id < 700) return 'snow';
+  if (id >= 700 && id < 800) return 'mist';
+  if (id === 800) return isNight ? 'clear_night' : 'clear_day';
+  return id >= 803 ? 'overcast' : 'cloudy';
+}
+
+async function loadForecast(lat, lon) {
+  const el = document.getElementById('forecast-row');
+  try {
+    const res  = await fetch(`https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${OPENWEATHER_API_KEY}&units=imperial`);
+    if (!res.ok) {
+      const body = await res.text();
+      console.error('forecast fetch failed', res.status, body);
+      if (el) el.innerHTML = `<div class="forecast-error">forecast error ${res.status}: ${body.slice(0,80)}</div>`;
+      return;
+    }
+    const data = await res.json();
+    if (!data.list || !data.list.length) {
+      if (el) el.innerHTML = `<div class="forecast-error">no forecast data returned</div>`;
+      return;
+    }
+    renderForecastStrip(data.list);
+  } catch(e) {
+    console.error('forecast error', e);
+    if (el) el.innerHTML = `<div class="forecast-error">forecast failed: ${e.message}</div>`;
+  }
+}
+
+function renderForecastStrip(list) {
+  const el = document.getElementById('forecast-row');
+  if (!el || !list.length) return;
+
+  // group by day, take midday-ish reading + min/max
+  const days = {};
+  list.forEach(item => {
+    const d = new Date(item.dt * 1000);
+    const key = d.toDateString();
+    if (!days[key]) days[key] = { temps: [], items: [], date: d };
+    days[key].temps.push(item.main.temp);
+    days[key].items.push(item);
+  });
+
+  el.innerHTML = '';
+  Object.values(days).slice(0, 5).forEach((day, i) => {
+    const max = Math.round(Math.max(...day.temps));
+    const min = Math.round(Math.min(...day.temps));
+    // pick item closest to midday for icon representation
+    const midday = day.items.reduce((best, item) => {
+      const h = new Date(item.dt*1000).getHours();
+      return Math.abs(h-13) < Math.abs(new Date(best.dt*1000).getHours()-13) ? item : best;
+    }, day.items[0]);
+    const iconKey = weatherIconKey(midday.weather[0].id, false);
+    const icon = WEATHER_ICONS[iconKey] || 'ti-sun';
+    const label = i === 0 ? 'today' : day.date.toLocaleDateString(undefined,{weekday:'short'});
+
+    const card = document.createElement('div');
+    card.className = 'forecast-card';
+    card.innerHTML = `
+      <div class="forecast-day">${label}</div>
+      <i class="ti ${icon} forecast-icon"></i>
+      <div class="forecast-temps"><span class="forecast-max">${max}°</span><span class="forecast-min">${min}°</span></div>`;
+    el.appendChild(card);
+  });
+}
+
+// ─── TIMELINE DRAWER ──────────────────────────────────────
+function toggleTimelineDrawer() {
+  const drawer = document.getElementById('timeline-drawer');
+  if (drawer?.classList.contains('timeline-drawer-open')) closeTimelineDrawer();
+  else openTimelineDrawer();
+}
+function openTimelineDrawer() {
+  document.getElementById('timeline-drawer')?.classList.remove('hidden');
+  document.getElementById('timeline-overlay')?.classList.remove('hidden');
+  requestAnimationFrame(() => {
+    document.getElementById('timeline-drawer')?.classList.add('timeline-drawer-open');
+  });
+  document.getElementById('timeline-pulltab')?.classList.add('pulltab-open');
+  resumeBlossom();
+}
+function closeTimelineDrawer() {
+  const drawer = document.getElementById('timeline-drawer');
+  drawer?.classList.remove('timeline-drawer-open');
+  document.getElementById('timeline-pulltab')?.classList.remove('pulltab-open');
+  setTimeout(() => {
+    drawer?.classList.add('hidden');
+    document.getElementById('timeline-overlay')?.classList.add('hidden');
+  }, 320);
+}
 
 // ─── ACTIVITY LOG ─────────────────────────────────────────
 function logActivityWithId(id, label, type = 'action') {
@@ -388,42 +518,161 @@ function renderSettings() {
 
 // ─── RENDER: NOW STRIP ────────────────────────────────────
 function renderNowStrip() {
+  const now   = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+
+  // ── todos ──
   const done  = S.todos.filter(t => t.done).length;
   const total = S.todos.length;
-  const todosVal = document.getElementById('now-todos-val');
-  const todosSub = document.getElementById('now-todos-sub');
+  const overdue = S.todos.filter(t => !t.done && t.dueDate && t.dueDate < today).length;
+  const dueToday = S.todos.filter(t => !t.done && t.dueDate === today).length;
+  const todosVal  = document.getElementById('now-todos-val');
+  const todosSub  = document.getElementById('now-todos-sub');
+  const todosNote = document.getElementById('now-todos-note');
   if (todosVal) {
-    if (!total) { todosVal.textContent = 'nothing yet'; todosSub.textContent = ''; }
-    else { todosVal.textContent = `${done} / ${total}`; todosSub.textContent = done === total ? 'all done ✓' : `${total - done} remaining`; }
-  }
-
-  const lastMusic = (S.musicLog || [])[0];
-  const musicVal = document.getElementById('now-music-val');
-  const musicSub = document.getElementById('now-music-sub');
-  if (musicVal) {
-    if (!lastMusic) { musicVal.textContent = 'nothing logged'; musicSub.textContent = ''; }
-    else { musicVal.textContent = lastMusic.title || lastMusic.raw; musicSub.textContent = lastMusic.artist || lastMusic.genre || ''; }
-  }
-
-  const lastHobby = (S.activityLog || []).find(e => e.type === 'hobby');
-  const hobbyVal = document.getElementById('now-hobby-val');
-  const hobbySub = document.getElementById('now-hobby-sub');
-  if (hobbyVal) {
-    if (!lastHobby) { hobbyVal.textContent = 'nothing yet'; hobbySub.textContent = ''; }
+    if (!total) { todosVal.textContent = 'nothing yet'; todosSub.textContent = ''; todosNote.textContent = 'add your first task'; }
     else {
-      hobbyVal.textContent = lastHobby.label.replace('logged ','').replace(' session','');
-      const ago = Math.floor((Date.now() - lastHobby.ts) / 3600000);
-      hobbySub.textContent = ago < 1 ? 'just now' : ago < 24 ? `${ago}h ago` : `${Math.floor(ago/24)}d ago`;
+      todosVal.textContent = `${done} / ${total}`;
+      todosSub.textContent = done === total ? 'all done ✓' : `${total - done} remaining`;
+      if (overdue > 0) todosNote.textContent = `${overdue} overdue — catch up`;
+      else if (dueToday > 0) todosNote.textContent = `${dueToday} due today`;
+      else if (done === total && total > 0) todosNote.textContent = 'clear day, nice work';
+      else todosNote.textContent = 'nothing urgent';
     }
   }
 
+  // ── goal ──
   const topGoal = [...(S.goals || [])].filter(g => g.cur < g.max).sort((a,b) => (b.cur/b.max) - (a.cur/a.max))[0];
-  const goalVal = document.getElementById('now-goal-val');
-  const goalSub = document.getElementById('now-goal-sub');
+  const goalVal  = document.getElementById('now-goal-val');
+  const goalSub  = document.getElementById('now-goal-sub');
+  const goalNote = document.getElementById('now-goal-note');
   if (goalVal) {
-    if (!topGoal) { goalVal.textContent = 'no goals yet'; goalSub.textContent = ''; }
-    else { goalVal.textContent = topGoal.name; goalSub.textContent = `${topGoal.cur} / ${topGoal.max}`; }
+    if (!topGoal) { goalVal.textContent = 'no goals yet'; goalSub.textContent = ''; goalNote.textContent = 'set something to work toward'; }
+    else {
+      const pct = Math.round((topGoal.cur/topGoal.max)*100);
+      goalVal.textContent = topGoal.name;
+      goalSub.textContent = `${topGoal.cur} / ${topGoal.max}`;
+      if (pct >= 90) goalNote.textContent = 'almost there';
+      else if (pct >= 50) goalNote.textContent = 'past the halfway mark';
+      else if (pct > 0) goalNote.textContent = 'building momentum';
+      else goalNote.textContent = 'time to start';
+    }
   }
+
+  // ── hobby ──
+  const lastHobby = (S.activityLog || []).find(e => e.type === 'hobby');
+  const hobbyVal  = document.getElementById('now-hobby-val');
+  const hobbySub  = document.getElementById('now-hobby-sub');
+  const hobbyNote = document.getElementById('now-hobby-note');
+  if (hobbyVal) {
+    if (!lastHobby) { hobbyVal.textContent = 'nothing yet'; hobbySub.textContent = ''; hobbyNote.textContent = 'log your first session'; }
+    else {
+      hobbyVal.textContent = lastHobby.label.replace('logged ','').replace(' session','');
+      const ago = Math.floor((Date.now() - lastHobby.ts) / 3600000);
+      const days = Math.floor(ago/24);
+      hobbySub.textContent = ago < 1 ? 'just now' : ago < 24 ? `${ago}h ago` : `${days}d ago`;
+      if (days >= 3) hobbyNote.textContent = `${days} days quiet — pick it back up?`;
+      else if (ago < 24) hobbyNote.textContent = 'fresh session, keep it going';
+      else hobbyNote.textContent = 'steady pace';
+    }
+  }
+
+  // ── music ──
+  const lastMusic = (S.musicLog || [])[0];
+  const musicVal  = document.getElementById('now-music-val');
+  const musicSub  = document.getElementById('now-music-sub');
+  const musicNote = document.getElementById('now-music-note');
+  if (musicVal) {
+    if (!lastMusic) { musicVal.textContent = 'nothing logged'; musicSub.textContent = ''; musicNote.textContent = 'log what you\'re hearing'; }
+    else {
+      musicVal.textContent = lastMusic.title || lastMusic.raw;
+      musicSub.textContent = lastMusic.artist || lastMusic.genre || '';
+      const moods = (S.musicLog||[]).slice(0,5).map(m=>m.mood).filter(Boolean).join(' ').toLowerCase();
+      if (lastMusic.genre) musicNote.textContent = `mostly ${lastMusic.genre} lately`;
+      else musicNote.textContent = 'see your full taste profile';
+    }
+  }
+
+  renderOutfitLine();
+}
+
+// ─── OUTFIT SUGGESTION ────────────────────────────────────
+function renderOutfitLine() {
+  const el = document.getElementById('outfit-line');
+  if (!el) return;
+  if (typeof _skyWeatherId === 'undefined' || _skyWeatherId == null) { el.textContent = ''; return; }
+
+  const tempEl = document.getElementById('sky-left');
+  const tempMatch = tempEl?.textContent.match(/(-?\d+)°F/);
+  const temp = tempMatch ? parseInt(tempMatch[1]) : null;
+  if (temp === null) { el.textContent = ''; return; }
+
+  const id = _skyWeatherId;
+  const isRain  = id >= 300 && id < 600;
+  const isStorm = id >= 200 && id < 300;
+  const isSnow  = id >= 600 && id < 700;
+
+  let suggestion = '';
+  if (isStorm) suggestion = 'stormy out — stay in if you can, grab a waterproof layer if not';
+  else if (isSnow) suggestion = 'snow today — boots, gloves, and a heavy coat';
+  else if (isRain) suggestion = temp < 50 ? 'cold and wet — waterproof jacket, warm layers underneath' : 'rain expected — bring something waterproof';
+  else if (temp >= 85) suggestion = 'hot one — light fabrics, stay hydrated';
+  else if (temp >= 70) suggestion = 'warm and easy — t-shirt weather';
+  else if (temp >= 55) suggestion = 'mild — a light layer should do it';
+  else if (temp >= 40) suggestion = 'cool out — jacket weather';
+  else if (temp >= 25) suggestion = 'cold — coat, and maybe a scarf';
+  else suggestion = 'brutally cold — bundle up, layers on layers';
+
+  el.textContent = suggestion;
+}
+
+function renderWorldTodosPreview() {
+  const el = document.getElementById('world-todos-rows');
+  if (!el) return;
+
+  const now   = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+
+  // priority: overdue, then due today, then no-date incomplete, then upcoming — cap at 4
+  const incomplete = (S.todos || []).filter(t => !t.done);
+  const overdue   = incomplete.filter(t => t.dueDate && t.dueDate < today);
+  const dueToday  = incomplete.filter(t => t.dueDate === today);
+  const noDate    = incomplete.filter(t => !t.dueDate);
+  const upcoming  = incomplete.filter(t => t.dueDate && t.dueDate > today)
+                               .sort((a,b) => a.dueDate.localeCompare(b.dueDate));
+
+  const ordered = [...overdue, ...dueToday, ...noDate, ...upcoming].slice(0, 4);
+
+  el.innerHTML = '';
+  if (!ordered.length) {
+    el.innerHTML = '<div class="world-todos-empty">nothing pending — you are clear</div>';
+    return;
+  }
+
+  ordered.forEach(t => {
+    const due = dueDateLabel(t.dueDate);
+    const priColor = t.priority ? PRI_COLORS[t.priority] : null;
+    const row = document.createElement('div');
+    row.className = 'world-todo-row';
+    row.innerHTML = `
+      ${priColor ? `<div class="t-pri-bar" style="background:${priColor}"></div>` : '<div class="t-pri-bar" style="background:transparent"></div>'}
+      <div class="tcirc" data-id="${t.id}"></div>
+      <span class="world-todo-label">${t.label}</span>
+      ${due ? `<span class="t-due ${due.cls}">${due.text}</span>` : ''}`;
+    const circ = row.querySelector('.tcirc');
+    circ.classList.toggle('done', t.done);
+    circ.addEventListener('click', () => {
+      t.done = !t.done;
+      circ.classList.toggle('done', t.done);
+      if (t.done) logActivity('completed: ' + t.label, 'todo');
+      save();
+      renderCalendar();
+      renderTodos('todos-all');
+      updateNavDots();
+      setTimeout(() => renderWorldTodosPreview(), 250);
+    });
+    el.appendChild(row);
+  });
 }
 
 // ─── NAV DOTS ─────────────────────────────────────────────
@@ -1499,7 +1748,8 @@ function nav(name) {
   });
 
   if (name === 'world')    { resumeBlossom(); }
-  else                     { pauseBlossom(); }
+  else                     { pauseBlossom(); closeTimelineDrawer(); }
+  document.getElementById('timeline-pulltab')?.classList.toggle('hidden', name !== 'world');
   if (name === 'history')  renderHistory();
   if (name === 'music')    renderMusicTab();
   if (name === 'journal')  { renderJournalTab(); setTimeout(updateNavDots, 100); }
