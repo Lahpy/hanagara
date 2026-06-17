@@ -287,17 +287,24 @@ async function loadSkyWeather() {
   }
 
   let lat, lon;
-  try {
-    const pos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, { timeout: 6000 }));
-    lat = pos.coords.latitude;
-    lon = pos.coords.longitude;
+  if (S.savedLocation) {
+    lat = S.savedLocation.lat;
+    lon = S.savedLocation.lon;
     _lastCoords = { lat, lon };
-  } catch(e) {
-    console.error('geolocation error', e);
-    document.getElementById('sky-condition').textContent = '';
-    const el = document.getElementById('forecast-row');
-    if (el) el.innerHTML = `<div class="forecast-error">location unavailable: ${e.message}</div>`;
-    return;
+  } else {
+    try {
+      const pos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, { timeout: 20000 }));
+      lat = pos.coords.latitude;
+      lon = pos.coords.longitude;
+      _lastCoords = { lat, lon };
+    } catch(e) {
+      console.error('geolocation error', e);
+      document.getElementById('sky-condition').textContent = '';
+      const el = document.getElementById('forecast-row');
+      const reason = e.code === 1 ? 'location access denied' : e.code === 3 ? 'location request timed out' : 'location unavailable';
+      if (el) el.innerHTML = `<div class="forecast-error">${reason} — <button class="forecast-error-link" onclick="nav('settings')">set a location in settings</button> to skip this</div>`;
+      return;
+    }
   }
 
   // fire forecast independently — don't let weather's success gate it
@@ -350,6 +357,9 @@ function weatherIconKey(id, isNight) {
   return id >= 803 ? 'overcast' : 'cloudy';
 }
 
+let _forecastList = [];
+let _forecastDayIndex = null; // null = showing 5-day view; number = showing hourly for that day
+
 async function loadForecast(lat, lon) {
   const el = document.getElementById('forecast-row');
   try {
@@ -365,18 +375,16 @@ async function loadForecast(lat, lon) {
       if (el) el.innerHTML = `<div class="forecast-error">no forecast data returned</div>`;
       return;
     }
-    renderForecastStrip(data.list);
+    _forecastList = data.list;
+    _forecastDayIndex = null;
+    renderForecastStrip(_forecastList);
   } catch(e) {
     console.error('forecast error', e);
     if (el) el.innerHTML = `<div class="forecast-error">forecast failed: ${e.message}</div>`;
   }
 }
 
-function renderForecastStrip(list) {
-  const el = document.getElementById('forecast-row');
-  if (!el || !list.length) return;
-
-  // group by day, take midday-ish reading + min/max
+function groupForecastByDay(list) {
   const days = {};
   list.forEach(item => {
     const d = new Date(item.dt * 1000);
@@ -385,9 +393,18 @@ function renderForecastStrip(list) {
     days[key].temps.push(item.main.temp);
     days[key].items.push(item);
   });
+  return Object.values(days).slice(0, 5);
+}
+
+function renderForecastStrip(list) {
+  const el = document.getElementById('forecast-row');
+  if (!el || !list.length) return;
+
+  const days = groupForecastByDay(list);
 
   el.innerHTML = '';
-  Object.values(days).slice(0, 5).forEach((day, i) => {
+  el.classList.remove('forecast-row-hourly');
+  days.forEach((day, i) => {
     const max = Math.round(Math.max(...day.temps));
     const min = Math.round(Math.min(...day.temps));
     // pick item closest to midday for icon representation
@@ -400,13 +417,68 @@ function renderForecastStrip(list) {
     const label = i === 0 ? 'today' : day.date.toLocaleDateString(undefined,{weekday:'short'});
 
     const card = document.createElement('div');
-    card.className = 'forecast-card';
+    card.className = 'forecast-card forecast-card-enter';
+    card.style.animationDelay = `${i * 28}ms`;
+    card.dataset.dayIndex = i;
     card.innerHTML = `
       <div class="forecast-day">${label}</div>
       <i class="ti ${icon} forecast-icon"></i>
       <div class="forecast-temps"><span class="forecast-max">${max}°</span><span class="forecast-min">${min}°</span></div>`;
+    card.addEventListener('click', () => openHourlyForecast(i));
     el.appendChild(card);
   });
+  el.classList.remove('forecast-row-transitioning');
+}
+
+function openHourlyForecast(dayIndex) {
+  const days = groupForecastByDay(_forecastList);
+  const day = days[dayIndex];
+  if (!day) return;
+  _forecastDayIndex = dayIndex;
+
+  const el = document.getElementById('forecast-row');
+  if (!el) return;
+
+  el.classList.add('forecast-row-transitioning');
+  setTimeout(() => {
+    el.innerHTML = '';
+    el.classList.add('forecast-row-hourly');
+
+    const backBtn = document.createElement('button');
+    backBtn.className = 'forecast-back-btn';
+    backBtn.innerHTML = '<i class="ti ti-chevron-left"></i>';
+    backBtn.addEventListener('click', closeHourlyForecast);
+    el.appendChild(backBtn);
+
+    day.items.forEach((item, idx) => {
+      const hour = new Date(item.dt*1000);
+      const label = hour.toLocaleTimeString(undefined, { hour: 'numeric' }).replace(' ','').toLowerCase();
+      const iconKey = weatherIconKey(item.weather[0].id, false);
+      const icon = WEATHER_ICONS[iconKey] || 'ti-sun';
+      const temp = Math.round(item.main.temp);
+
+      const card = document.createElement('div');
+      card.className = 'forecast-card forecast-card-hourly forecast-card-enter';
+      card.style.animationDelay = `${idx * 28}ms`;
+      card.innerHTML = `
+        <div class="forecast-day">${label}</div>
+        <i class="ti ${icon} forecast-icon"></i>
+        <div class="forecast-temps"><span class="forecast-max">${temp}°</span></div>`;
+      el.appendChild(card);
+    });
+
+    el.classList.remove('forecast-row-transitioning');
+  }, 160);
+}
+
+function closeHourlyForecast() {
+  _forecastDayIndex = null;
+  const el = document.getElementById('forecast-row');
+  if (!el) { renderForecastStrip(_forecastList); return; }
+  el.classList.add('forecast-row-transitioning');
+  setTimeout(() => {
+    renderForecastStrip(_forecastList);
+  }, 160);
 }
 
 // ─── TIMELINE DRAWER ──────────────────────────────────────
@@ -514,9 +586,95 @@ function renderSettings() {
   renderThemeSwitcher();
   const total = S.hobbies.reduce((a, h) => a + (h.sessions || 0), 0);
   document.getElementById('sessions-label').textContent = total + ' sessions logged';
+  renderLocationSetting();
+}
+
+// ─── LOCATION SETTING ─────────────────────────────────────
+function renderLocationSetting() {
+  const el = document.getElementById('location-current');
+  if (!el) return;
+  if (S.savedLocation) {
+    el.innerHTML = `<i class="ti ti-map-pin"></i> using <strong>${S.savedLocation.label}</strong>`;
+    el.classList.remove('hidden');
+  } else {
+    el.innerHTML = '';
+    el.classList.add('hidden');
+  }
+}
+
+async function searchAndSaveLocation() {
+  const inp = document.getElementById('loc-city-input');
+  const query = inp.value.trim();
+  if (!query) { inp.focus(); return; }
+  if (typeof OPENWEATHER_API_KEY === 'undefined' || !OPENWEATHER_API_KEY) {
+    alert('OpenWeather API key is missing from config.js');
+    return;
+  }
+  try {
+    const res = await fetch(`https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(query)}&limit=1&appid=${OPENWEATHER_API_KEY}`);
+    const data = await res.json();
+    if (!data.length) { alert('Couldn\'t find that location — try a different spelling or add a country code (e.g. "Madison, WI, US")'); return; }
+    const place = data[0];
+    const label = [place.name, place.state, place.country].filter(Boolean).join(', ');
+    S.savedLocation = { lat: place.lat, lon: place.lon, label };
+    save();
+    inp.value = '';
+    renderLocationSetting();
+    loadSkyWeather();
+  } catch(e) {
+    console.error('location search error', e);
+    alert('Something went wrong searching for that location.');
+  }
+}
+
+function clearSavedLocation() {
+  S.savedLocation = null;
+  save();
+  renderLocationSetting();
+  loadSkyWeather();
 }
 
 // ─── RENDER: NOW STRIP ────────────────────────────────────
+// ─── REMINDERS (games) ────────────────────────────────────
+function getDueReminders() {
+  const now = Date.now();
+  const due = [];
+  (S.hobbies||[]).filter(h => h.type === 'games').forEach(h => {
+    (h.reminders||[]).forEach(r => {
+      if (!r.lastDone) { due.push(r); return; }
+      const sinceMs = now - r.lastDone;
+      if (r.recurrence === 'daily'  && sinceMs > 20*3600000) due.push(r);
+      if (r.recurrence === 'weekly' && sinceMs > 6.5*86400000) due.push(r);
+      // 'once' reminders never re-trigger once done
+    });
+  });
+  return due;
+}
+
+function renderRemindersBanner() {
+  const el = document.getElementById('reminders-banner');
+  if (!el) return;
+  const due = getDueReminders();
+  if (!due.length) { el.innerHTML = ''; el.classList.add('hidden'); return; }
+  el.classList.remove('hidden');
+  el.innerHTML = `
+    <div class="reminders-banner-hdr"><i class="ti ti-bell"></i> reminders</div>
+    <div class="reminders-banner-list">
+      ${due.slice(0,4).map(r => `
+        <div class="reminder-chip">
+          <span>${r.interestName}: ${r.text}</span>
+          <button data-rid="${r.id}" data-hid="${r.interestId}"><i class="ti ti-check"></i></button>
+        </div>`).join('')}
+    </div>`;
+  el.querySelectorAll('.reminder-chip button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const h = S.hobbies.find(x => x.id === btn.dataset.hid);
+      const r = h?.reminders.find(x => x.id === btn.dataset.rid);
+      if (r) { r.lastDone = Date.now(); save(); renderRemindersBanner(); }
+    });
+  });
+}
+
 function renderNowStrip() {
   const now   = new Date();
   const today = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
@@ -526,11 +684,13 @@ function renderNowStrip() {
   const total = S.todos.length;
   const overdue = S.todos.filter(t => !t.done && t.dueDate && t.dueDate < today).length;
   const dueToday = S.todos.filter(t => !t.done && t.dueDate === today).length;
+  const upcoming = S.todos.filter(t => !t.done && t.dueDate && t.dueDate > today).length;
   const todosVal  = document.getElementById('now-todos-val');
   const todosSub  = document.getElementById('now-todos-sub');
   const todosNote = document.getElementById('now-todos-note');
+  const todosBreak = document.getElementById('now-todos-break');
   if (todosVal) {
-    if (!total) { todosVal.textContent = 'nothing yet'; todosSub.textContent = ''; todosNote.textContent = 'add your first task'; }
+    if (!total) { todosVal.textContent = 'nothing yet'; todosSub.textContent = ''; todosNote.textContent = 'add your first task'; if (todosBreak) todosBreak.innerHTML = ''; }
     else {
       todosVal.textContent = `${done} / ${total}`;
       todosSub.textContent = done === total ? 'all done ✓' : `${total - done} remaining`;
@@ -538,16 +698,25 @@ function renderNowStrip() {
       else if (dueToday > 0) todosNote.textContent = `${dueToday} due today`;
       else if (done === total && total > 0) todosNote.textContent = 'clear day, nice work';
       else todosNote.textContent = 'nothing urgent';
+      if (todosBreak) {
+        todosBreak.innerHTML = `
+          ${overdue ? `<span class="insight-pill insight-pill-rose">${overdue} overdue</span>` : ''}
+          ${dueToday ? `<span class="insight-pill">${dueToday} today</span>` : ''}
+          ${upcoming ? `<span class="insight-pill insight-pill-muted">${upcoming} upcoming</span>` : ''}`;
+      }
     }
   }
 
   // ── goal ──
-  const topGoal = [...(S.goals || [])].filter(g => g.cur < g.max).sort((a,b) => (b.cur/b.max) - (a.cur/a.max))[0];
+  const activeGoals = (S.goals||[]).filter(g => g.cur < g.max);
+  const completeGoals = (S.goals||[]).filter(g => g.cur >= g.max);
+  const topGoal = [...activeGoals].sort((a,b) => (b.cur/b.max) - (a.cur/a.max))[0];
   const goalVal  = document.getElementById('now-goal-val');
   const goalSub  = document.getElementById('now-goal-sub');
   const goalNote = document.getElementById('now-goal-note');
+  const goalBreak = document.getElementById('now-goal-break');
   if (goalVal) {
-    if (!topGoal) { goalVal.textContent = 'no goals yet'; goalSub.textContent = ''; goalNote.textContent = 'set something to work toward'; }
+    if (!topGoal) { goalVal.textContent = 'no goals yet'; goalSub.textContent = ''; goalNote.textContent = 'set something to work toward'; if (goalBreak) goalBreak.innerHTML = ''; }
     else {
       const pct = Math.round((topGoal.cur/topGoal.max)*100);
       goalVal.textContent = topGoal.name;
@@ -556,6 +725,11 @@ function renderNowStrip() {
       else if (pct >= 50) goalNote.textContent = 'past the halfway mark';
       else if (pct > 0) goalNote.textContent = 'building momentum';
       else goalNote.textContent = 'time to start';
+      if (goalBreak) {
+        goalBreak.innerHTML = `
+          <span class="insight-pill">${activeGoals.length} active</span>
+          ${completeGoals.length ? `<span class="insight-pill insight-pill-sage">${completeGoals.length} done</span>` : ''}`;
+      }
     }
   }
 
@@ -564,8 +738,11 @@ function renderNowStrip() {
   const hobbyVal  = document.getElementById('now-hobby-val');
   const hobbySub  = document.getElementById('now-hobby-sub');
   const hobbyNote = document.getElementById('now-hobby-note');
+  const hobbyBreak = document.getElementById('now-hobby-break');
+  const totalSessions = (S.hobbies||[]).reduce((a,h) => a + (h.sessions||0), 0);
+  const activeStreaks = (S.hobbies||[]).filter(h => h.streak > 0).length;
   if (hobbyVal) {
-    if (!lastHobby) { hobbyVal.textContent = 'nothing yet'; hobbySub.textContent = ''; hobbyNote.textContent = 'log your first session'; }
+    if (!lastHobby) { hobbyVal.textContent = 'nothing yet'; hobbySub.textContent = ''; hobbyNote.textContent = 'log your first session'; if (hobbyBreak) hobbyBreak.innerHTML = ''; }
     else {
       hobbyVal.textContent = lastHobby.label.replace('logged ','').replace(' session','');
       const ago = Math.floor((Date.now() - lastHobby.ts) / 3600000);
@@ -574,6 +751,11 @@ function renderNowStrip() {
       if (days >= 3) hobbyNote.textContent = `${days} days quiet — pick it back up?`;
       else if (ago < 24) hobbyNote.textContent = 'fresh session, keep it going';
       else hobbyNote.textContent = 'steady pace';
+      if (hobbyBreak) {
+        hobbyBreak.innerHTML = `
+          <span class="insight-pill">${totalSessions} total session${totalSessions!==1?'s':''}</span>
+          ${activeStreaks ? `<span class="insight-pill insight-pill-amber">${activeStreaks} streak${activeStreaks!==1?'s':''} active</span>` : ''}`;
+      }
     }
   }
 
@@ -582,18 +764,28 @@ function renderNowStrip() {
   const musicVal  = document.getElementById('now-music-val');
   const musicSub  = document.getElementById('now-music-sub');
   const musicNote = document.getElementById('now-music-note');
+  const musicBreak = document.getElementById('now-music-break');
   if (musicVal) {
-    if (!lastMusic) { musicVal.textContent = 'nothing logged'; musicSub.textContent = ''; musicNote.textContent = 'log what you\'re hearing'; }
+    if (!lastMusic) { musicVal.textContent = 'nothing logged'; musicSub.textContent = ''; musicNote.textContent = 'log what you\'re hearing'; if (musicBreak) musicBreak.innerHTML = ''; }
     else {
       musicVal.textContent = lastMusic.title || lastMusic.raw;
       musicSub.textContent = lastMusic.artist || lastMusic.genre || '';
-      const moods = (S.musicLog||[]).slice(0,5).map(m=>m.mood).filter(Boolean).join(' ').toLowerCase();
       if (lastMusic.genre) musicNote.textContent = `mostly ${lastMusic.genre} lately`;
       else musicNote.textContent = 'see your full taste profile';
+      if (musicBreak) {
+        const genreCounts = {};
+        (S.musicLog||[]).forEach(m => { if (m.genre) genreCounts[m.genre] = (genreCounts[m.genre]||0)+1; });
+        const topGenre = Object.entries(genreCounts).sort((a,b)=>b[1]-a[1])[0];
+        musicBreak.innerHTML = `
+          <span class="insight-pill">${(S.musicLog||[]).length} logged</span>
+          ${topGenre ? `<span class="insight-pill insight-pill-violet">${topGenre[0]}</span>` : ''}
+          ${lastMusic.mood ? `<span class="insight-pill insight-pill-muted">${lastMusic.mood}</span>` : ''}`;
+      }
     }
   }
 
   renderOutfitLine();
+  renderRemindersBanner();
 }
 
 // ─── OUTFIT SUGGESTION ────────────────────────────────────
@@ -705,44 +897,205 @@ function renderAll() {
   renderCalendar();
   renderNowStrip();
   updateNavDots();
+  initShinkansenScene();
 }
 
-// ─── RENDER: HOBBIES ──────────────────────────────────────
+// ─── SHINKANSEN SCENE (decorative, world tab) ─────────────
+function initShinkansenScene() {
+  const g = document.getElementById('sk-poles');
+  if (!g || g.dataset.built) return;
+  g.dataset.built = '1';
+
+  // build two sets of poles back-to-back so the scroll loop is seamless
+  for (let set = 0; set < 2; set++) {
+    for (let i = 0; i < 9; i++) {
+      const x = set * 400 + i * 50;
+      const pole = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      pole.innerHTML = `
+        <line x1="${x}" y1="58" x2="${x}" y2="72" stroke="var(--bg3)" stroke-width="1.5"/>
+        <line x1="${x-6}" y1="61" x2="${x+6}" y2="61" stroke="var(--bg3)" stroke-width="1"/>`;
+      g.appendChild(pole);
+    }
+  }
+  // animate the whole poles group leftward by exactly one viewBox-width, looping seamlessly
+  const polesAnim = document.createElementNS('http://www.w3.org/2000/svg', 'animateTransform');
+  polesAnim.setAttribute('attributeName', 'transform');
+  polesAnim.setAttribute('type', 'translate');
+  polesAnim.setAttribute('from', '0 0');
+  polesAnim.setAttribute('to', '-400 0');
+  polesAnim.setAttribute('dur', '3s');
+  polesAnim.setAttribute('repeatCount', 'indefinite');
+  g.appendChild(polesAnim);
+
+  // animate the train sliding across and off, looping
+  const train = document.getElementById('sk-train');
+  if (train) {
+    const trainAnim = document.createElementNS('http://www.w3.org/2000/svg', 'animateTransform');
+    trainAnim.setAttribute('attributeName', 'transform');
+    trainAnim.setAttribute('type', 'translate');
+    trainAnim.setAttribute('from', '-90 0');
+    trainAnim.setAttribute('to', '420 0');
+    trainAnim.setAttribute('dur', '8s');
+    trainAnim.setAttribute('repeatCount', 'indefinite');
+    train.appendChild(trainAnim);
+  }
+}
+
+// ─── RENDER: INTERESTS (grouped grid, formerly hobbies) ───
+let _interestTypeFilter = 'all';
+
+function renderInterestTypeFilter() {
+  const el = document.getElementById('interest-type-filter');
+  if (!el) return;
+  const counts = { all: S.hobbies.length };
+  INTEREST_TYPES.forEach(t => { counts[t.id] = S.hobbies.filter(h => (h.type||'generic') === t.id).length; });
+
+  el.innerHTML = '';
+  const allBtn = document.createElement('button');
+  allBtn.className = 'itype-btn' + (_interestTypeFilter === 'all' ? ' itype-active' : '');
+  allBtn.textContent = `all (${counts.all})`;
+  allBtn.onclick = () => { _interestTypeFilter = 'all'; renderHobbies(); };
+  el.appendChild(allBtn);
+
+  INTEREST_TYPES.forEach(t => {
+    if (!counts[t.id]) return;
+    const btn = document.createElement('button');
+    btn.className = 'itype-btn' + (_interestTypeFilter === t.id ? ' itype-active' : '');
+    btn.innerHTML = `<i class="ti ${t.icon}"></i> ${t.label} (${counts[t.id]})`;
+    btn.onclick = () => { _interestTypeFilter = t.id; renderHobbies(); };
+    el.appendChild(btn);
+  });
+}
+
+// surface-level info shown directly on the tile face, per type
+function interestTileOverview(h) {
+  const type = h.type || 'generic';
+
+  if (type === 'alcohol') {
+    const drinks = h.drinks || [];
+    const tags = (h.tasteTags||[]).slice(0,4);
+    const topNames = drinks.slice(0,2).map(d=>d.name).join(', ');
+    return `
+      <div class="interest-tile-stat-row">
+        <span class="interest-tile-stat-num">${drinks.length}</span>
+        <span class="interest-tile-stat-lbl">favorite${drinks.length!==1?'s':''} logged</span>
+      </div>
+      ${topNames ? `<div class="interest-tile-line"><strong>recent:</strong> ${topNames}${drinks.length>2?'...':''}</div>` : '<div class="interest-tile-line">nothing logged yet</div>'}
+      ${tags.length ? `<div class="interest-tile-chips">${tags.map(t=>`<span class="interest-tile-chip">${t}</span>`).join('')}</div>` : ''}
+    `;
+  }
+
+  if (type === 'anime') {
+    const charCount = (h.characters||[]).length;
+    const tags = (h.tasteTags||[]).slice(0,3);
+    const topChars = (h.characters||[]).filter(c=>c.tier==='S').slice(0,3).map(c=>c.name);
+    return `
+      <div class="interest-tile-chips">
+        <span class="interest-tile-chip anime-status-${h.status||'planned'}" style="border-color:currentColor">${h.status||'planned'}</span>
+      </div>
+      <div class="interest-tile-line">${charCount ? `<strong>${charCount}</strong> character${charCount!==1?'s':''} ranked` : 'no characters ranked yet'}${topChars.length ? ` · S-tier: ${topChars.join(', ')}` : ''}</div>
+      ${tags.length ? `<div class="interest-tile-chips">${tags.map(t=>`<span class="interest-tile-chip">${t}</span>`).join('')}</div>` : ''}
+    `;
+  }
+
+  if (type === 'games') {
+    const charCount = (h.characters||[]).length;
+    const reminders = h.reminders || [];
+    const due = reminders.filter(r => {
+      if (!r.lastDone) return true;
+      const since = Date.now() - r.lastDone;
+      if (r.recurrence === 'daily') return since > 20*3600000;
+      if (r.recurrence === 'weekly') return since > 6.5*86400000;
+      return false;
+    }).length;
+    return `
+      <div class="interest-tile-line">${h.uid ? `<strong>UID</strong> ${h.uid}` : 'no UID set'}</div>
+      <div class="interest-tile-stat-row">
+        <span class="interest-tile-stat-num">${charCount}</span>
+        <span class="interest-tile-stat-lbl">character${charCount!==1?'s':''}</span>
+      </div>
+      <div class="interest-tile-line">${reminders.length ? `${due ? `<strong>${due}</strong> reminder${due!==1?'s':''} due` : 'all reminders caught up'} · ${reminders.length} total` : 'no reminders set'}</div>
+    `;
+  }
+
+  // generic
+  return `
+    <div class="interest-tile-stat-row">
+      <span class="interest-tile-stat-num">${h.sessions||0}</span>
+      <span class="interest-tile-stat-lbl">session${h.sessions===1?'':'s'} logged</span>
+    </div>
+    ${h.streak ? `<div class="interest-tile-line"><strong>${h.streak} day</strong> streak going</div>` : '<div class="interest-tile-line">no streak yet — log one to start</div>'}
+  `;
+}
+
 function renderHobbies() {
+  renderInterestTypeFilter();
   const list = document.getElementById('hobby-list');
   list.innerHTML = '';
-  for (const h of S.hobbies) {
-    const c = HOBBY_COLORS[h.color] || HOBBY_COLORS.sage;
-    const card = document.createElement('div');
-    card.className = 'hcard';
-    card.draggable = true;
-    card.dataset.id = h.id;
-    card.innerHTML = `
-      <div class="hcard-top">
-        <div class="hdrag-handle"><i class="ti ti-grip-vertical"></i></div>
-        <div class="hico" style="background:${c.bg}"><i class="ti ${h.icon}" style="color:${c.fill}"></i></div>
-        <div class="hinfo">
-          <div class="hname">${h.name}</div>
-          <div class="hsub">${h.sessions || 0} sessions${h.streak ? `  ·  <span style="color:var(--rose)">${h.streak}d streak</span>` : ''}</div>
-        </div>
-      </div>
-      <div class="hbtns">
-        <button class="btn p" onclick="logHobby('${h.id}', this)">log session</button>
-        <button class="btn"   onclick="openHobbyModal('${h.id}')">edit</button>
-        <button class="btn"   onclick="sendPrompt('tips for ${h.name}')">tips ↗</button>
-      </div>`;
-    card.addEventListener('dragstart', e => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', h.id); setTimeout(() => card.classList.add('dragging'), 0); });
-    card.addEventListener('dragend',  () => card.classList.remove('dragging'));
-    card.addEventListener('dragover', e => { e.preventDefault(); card.classList.add('drag-over'); });
-    card.addEventListener('dragleave',() => card.classList.remove('drag-over'));
-    card.addEventListener('drop', e => {
-      e.preventDefault(); card.classList.remove('drag-over');
-      const from = S.hobbies.findIndex(x => x.id === e.dataTransfer.getData('text/plain'));
-      const to   = S.hobbies.findIndex(x => x.id === h.id);
-      if (from !== to) { const [m] = S.hobbies.splice(from, 1); S.hobbies.splice(to, 0, m); save(); renderHobbies(); }
-    });
-    list.appendChild(card);
+
+  const visible = S.hobbies.filter(h => _interestTypeFilter === 'all' || (h.type||'generic') === _interestTypeFilter);
+
+  if (!visible.length) {
+    list.innerHTML = '<div style="color:var(--ink3);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:20px 0">nothing here yet</div>';
+    return;
   }
+
+  // group by type, in INTEREST_TYPES order
+  const order = INTEREST_TYPES.map(t => t.id);
+  const groups = {};
+  visible.forEach(h => { const t = h.type || 'generic'; (groups[t] = groups[t] || []).push(h); });
+
+  order.forEach(typeId => {
+    const items = groups[typeId];
+    if (!items || !items.length) return;
+    const typeMeta = INTEREST_TYPES.find(t => t.id === typeId);
+
+    const section = document.createElement('div');
+    section.className = 'interest-section';
+    section.innerHTML = `<div class="interest-section-hdr"><i class="ti ${typeMeta.icon}"></i><span>${typeMeta.label}</span></div>`;
+
+    const grid = document.createElement('div');
+    grid.className = 'interest-grid';
+
+    items.forEach(h => {
+      const c = HOBBY_COLORS[h.color] || HOBBY_COLORS.sage;
+      const overview = interestTileOverview(h);
+      const tile = document.createElement('div');
+      tile.className = 'interest-tile';
+      tile.draggable = true;
+      tile.dataset.id = h.id;
+      tile.innerHTML = `
+        <button class="interest-tile-edit" onclick="event.stopPropagation();openHobbyModal('${h.id}')"><i class="ti ti-pencil"></i></button>
+        <div class="interest-tile-top">
+          <div class="interest-tile-thumb" style="background:${c.bg};color:${c.fill}"><i class="ti ${h.icon}"></i></div>
+          <div class="interest-tile-titlewrap">
+            <div class="interest-tile-name">${h.name}</div>
+          </div>
+        </div>
+        <div class="interest-tile-overview">${overview}</div>
+        ${typeId === 'generic' ? `<button class="interest-tile-log" onclick="event.stopPropagation();logHobby('${h.id}', this)"><i class="ti ti-plus"></i> log</button>` : ''}
+      `;
+      tile.addEventListener('click', (e) => {
+        if (e.target.closest('.interest-tile-edit') || e.target.closest('.interest-tile-log')) return;
+        if (typeId === 'generic') openHobbyModal(h.id);
+        else openInterestDetail(h.id);
+      });
+      tile.addEventListener('dragstart', e => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', h.id); setTimeout(() => tile.classList.add('dragging'), 0); });
+      tile.addEventListener('dragend',  () => tile.classList.remove('dragging'));
+      tile.addEventListener('dragover', e => { e.preventDefault(); tile.classList.add('drag-over'); });
+      tile.addEventListener('dragleave',() => tile.classList.remove('drag-over'));
+      tile.addEventListener('drop', e => {
+        e.preventDefault(); tile.classList.remove('drag-over');
+        const from = S.hobbies.findIndex(x => x.id === e.dataTransfer.getData('text/plain'));
+        const to   = S.hobbies.findIndex(x => x.id === h.id);
+        if (from !== to) { const [m] = S.hobbies.splice(from, 1); S.hobbies.splice(to, 0, m); save(); renderHobbies(); }
+      });
+      grid.appendChild(tile);
+    });
+
+    section.appendChild(grid);
+    list.appendChild(section);
+  });
 }
 
 // ─── RENDER: GOALS ────────────────────────────────────────
@@ -753,25 +1106,46 @@ function renderGoals() {
     const c = HOBBY_COLORS[g.color] || HOBBY_COLORS.sage;
     const pct      = Math.min(100, Math.round((g.cur / g.max) * 100));
     const complete = pct >= 100;
-    const status   = complete ? 'complete' : pct > 50 ? 'past halfway' : pct > 0 ? 'in progress' : 'not started';
+    const ringColor = complete ? 'var(--sage)' : c.fill;
+    const circumference = 2 * Math.PI * 17;
+    const offset = circumference * (1 - pct/100);
+
+    let insight;
+    if (complete) insight = 'completed — nice work';
+    else if (g.createdAt) {
+      const days = Math.max(0, Math.floor((Date.now() - g.createdAt) / 86400000));
+      if (days === 0) insight = 'started today';
+      else if (pct === 0) insight = `${days} day${days!==1?'s':''} in, no progress yet`;
+      else {
+        const perDay = pct / Math.max(days,1);
+        const daysLeft = perDay > 0 ? Math.ceil((100-pct) / perDay) : null;
+        insight = daysLeft && daysLeft < 365 ? `on pace to finish in ~${daysLeft}d` : `${days} day${days!==1?'s':''} in, ${pct}% there`;
+      }
+    } else {
+      insight = pct === 0 ? 'not started yet' : pct > 50 ? 'past the halfway mark' : 'building momentum';
+    }
+
     const card = document.createElement('div');
     card.className = 'gcard' + (complete ? ' gcard-complete' : '');
     card.draggable = true;
     card.dataset.id = g.id;
     card.innerHTML = `
-      <div class="gtop">
-        <div class="hdrag-handle"><i class="ti ti-grip-vertical"></i></div>
-        <div class="gico" style="background:${c.bg}"><i class="ti ${complete ? 'ti-check' : g.icon}" style="color:${complete ? 'var(--sage)' : c.fill};font-size:14px"></i></div>
-        <div style="flex:1">
-          <div class="gname ${complete ? 'gname-done' : ''}">${g.name}</div>
-          <div class="gdesc">${g.desc}</div>
-          <span class="gstatus" style="background:${complete ? 'rgba(94,150,100,.12)' : c.bg};color:${complete ? 'var(--sage)' : c.text}">${status}</span>
-        </div>
+      <div class="hdrag-handle"><i class="ti ti-grip-vertical"></i></div>
+      <div class="gring-wrap">
+        <svg viewBox="0 0 40 40" class="gring">
+          <circle cx="20" cy="20" r="17" fill="none" stroke="var(--line)" stroke-width="3"/>
+          <circle cx="20" cy="20" r="17" fill="none" stroke="${ringColor}" stroke-width="3"
+            stroke-dasharray="${circumference}" stroke-dashoffset="${circumference}"
+            stroke-linecap="round" transform="rotate(-90 20 20)" data-target-offset="${offset}"/>
+        </svg>
+        <i class="ti ${complete ? 'ti-check' : g.icon} gring-icon" style="color:${ringColor}"></i>
       </div>
-      <div class="gbot">
-        <div class="gbar-bg"><div class="gbar-fill" style="width:0%;background:${complete ? 'var(--sage)' : c.fill}" data-w="${pct}"></div></div>
-        <div class="gpct" style="${complete ? 'color:var(--sage)' : ''}">${g.cur} / ${g.max}</div>
+      <div class="ginfo">
+        <div class="gname ${complete ? 'gname-done' : ''}">${g.name}</div>
+        <div class="gdesc">${g.desc}</div>
+        <div class="ginsight">${insight}</div>
       </div>
+      <div class="gpct-big" style="${complete ? 'color:var(--sage)' : ''}">${g.cur}<span class="gpct-max">/${g.max}</span></div>
       <div class="hbtns">
         ${!complete
           ? `<button class="btn p" onclick="incGoal('${g.id}')">+ progress</button>`
@@ -792,8 +1166,57 @@ function renderGoals() {
     list.appendChild(card);
   }
   requestAnimationFrame(() => {
-    list.querySelectorAll('.gbar-fill').forEach(el => { requestAnimationFrame(() => { el.style.width = el.dataset.w + '%'; }); });
+    list.querySelectorAll('.gring circle[data-target-offset]').forEach(el => {
+      requestAnimationFrame(() => { el.style.transition = 'stroke-dashoffset .7s ease'; el.style.strokeDashoffset = el.dataset.targetOffset; });
+    });
   });
+  renderGoalsOverview();
+}
+
+function renderGoalsOverview() {
+  const dateEl = document.getElementById('goals-card-date');
+  const identityEl = document.getElementById('goals-card-identity');
+  const circleEl = document.getElementById('goals-overview-circle');
+  const pctEl = document.getElementById('goals-ring-pct');
+  const statsEl = document.getElementById('goals-card-stats');
+  const closestEl = document.getElementById('goals-card-closest');
+  if (!dateEl) return;
+
+  dateEl.textContent = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+
+  const goals = S.goals || [];
+  const complete = goals.filter(g => g.cur >= g.max);
+  const active = goals.filter(g => g.cur < g.max);
+  const avgPct = goals.length ? Math.round(goals.reduce((a,g) => a + Math.min(100,(g.cur/g.max)*100), 0) / goals.length) : 0;
+
+  identityEl.textContent = goals.length
+    ? (avgPct >= 70 ? 'closing in on everything' : avgPct >= 35 ? 'steady progress across the board' : 'early days')
+    : 'nothing set yet';
+
+  const circumference = 2 * Math.PI * 50;
+  if (circleEl) {
+    requestAnimationFrame(() => {
+      circleEl.style.strokeDashoffset = circumference * (1 - avgPct/100);
+    });
+  }
+  if (pctEl) pctEl.textContent = `${avgPct}%`;
+
+  if (statsEl) {
+    statsEl.innerHTML = `
+      <div class="mc-stat"><div class="mc-stat-num">${goals.length}</div><div class="mc-stat-lbl">total</div></div>
+      <div class="mc-stat"><div class="mc-stat-num">${active.length}</div><div class="mc-stat-lbl">active</div></div>
+      <div class="mc-stat"><div class="mc-stat-num">${complete.length}</div><div class="mc-stat-lbl">done</div></div>`;
+  }
+
+  if (closestEl) {
+    const closest = [...active].sort((a,b) => (b.cur/b.max) - (a.cur/a.max)).slice(0,3);
+    closestEl.innerHTML = closest.length
+      ? closest.map(g => {
+          const pct = Math.round((g.cur/g.max)*100);
+          return `<div class="goals-closest-row"><span class="goals-closest-name">${g.name}</span><span class="goals-closest-pct">${pct}%</span></div>`;
+        }).join('')
+      : '<div class="idtl-empty-sm">nothing in progress</div>';
+  }
 }
 
 // ─── CALENDAR ─────────────────────────────────────────────
@@ -2191,7 +2614,7 @@ function deriveMood() {
 }
 
 function buildSpiritPrompt(screenContext) {
-  const h = S.hobbies.map(x => `${x.name} (id:${x.id}, ${x.sessions||0} sessions)`).join(', ') || 'none';
+  const h = S.hobbies.map(x => `${x.name} [${x.type||'generic'}] (id:${x.id}, ${x.sessions||0} sessions)`).join(', ') || 'none';
   const g = S.goals.map(x => `${x.name} (id:${x.id}, ${x.cur}/${x.max})`).join(', ') || 'none';
   const recentLog = (S.activityLog||[]).slice(0,5).map(e => e.label).join(', ') || 'none';
   const lastMusic = (S.musicLog||[])[0];
@@ -2400,17 +2823,427 @@ function sendPrompt(text) {
   if (inp) { inp.value = text; spiritSend(); }
 }
 
+// ─── INTEREST DETAIL DRAWER ───────────────────────────────
+let _activeInterestId = null;
+
+function openInterestDetail(id) {
+  const h = S.hobbies.find(x => x.id === id);
+  if (!h) return;
+  _activeInterestId = id;
+  const c = HOBBY_COLORS[h.color] || HOBBY_COLORS.sage;
+
+  document.getElementById('idtl-icon').innerHTML = `<i class="ti ${h.icon}"></i>`;
+  document.getElementById('idtl-icon').style.background = c.bg;
+  document.getElementById('idtl-icon').style.color = c.fill;
+  document.getElementById('idtl-title').textContent = h.name;
+
+  renderInterestDetailBody(h);
+
+  document.getElementById('interest-detail-overlay').classList.remove('hidden');
+  document.getElementById('interest-detail').classList.remove('hidden');
+  requestAnimationFrame(() => document.getElementById('interest-detail').classList.add('interest-detail-open'));
+}
+
+function closeInterestDetail() {
+  const d = document.getElementById('interest-detail');
+  d?.classList.remove('interest-detail-open');
+  setTimeout(() => {
+    d?.classList.add('hidden');
+    document.getElementById('interest-detail-overlay')?.classList.add('hidden');
+  }, 280);
+  _activeInterestId = null;
+}
+
+function renderInterestDetailBody(h) {
+  const body = document.getElementById('idtl-body');
+  if (!body) return;
+  const type = h.type || 'generic';
+  if (type === 'alcohol') body.innerHTML = alcoholDetailHTML(h);
+  else if (type === 'anime') body.innerHTML = animeDetailHTML(h);
+  else if (type === 'games') body.innerHTML = gamesDetailHTML(h);
+  else body.innerHTML = '<div class="idtl-empty">nothing special here — just log sessions from the interests list.</div>';
+  wireInterestDetailEvents(h);
+}
+
+function refreshInterestDetail() {
+  const h = S.hobbies.find(x => x.id === _activeInterestId);
+  if (h) renderInterestDetailBody(h);
+  renderHobbies();
+}
+
+// ─────────────────────────────────────────────────────────
+// ALCOHOL
+// ─────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────
+// ALCOHOL — each entry is one drink
+// ─────────────────────────────────────────────────────────
+function alcoholDetailHTML(h) {
+  const drinks = h.drinks || [];
+  const tags = h.tasteTags || [];
+  return `
+    <div class="idtl-section">
+      <div class="idtl-section-hdr"><span>favorites</span></div>
+      <div class="idtl-add-row">
+        <input class="idtl-input" id="alc-drink-name" placeholder="name, e.g. Lagavulin 16" />
+        <input class="idtl-input idtl-input-sm" id="alc-drink-kind" placeholder="type, e.g. whiskey" />
+        <button class="idtl-add-btn" data-action="add-drink"><i class="ti ti-plus"></i></button>
+      </div>
+      <div class="idtl-list">
+        ${drinks.length ? drinks.map(d => `
+          <div class="idtl-row">
+            <div class="idtl-row-main">
+              <div class="idtl-row-title">${d.name}</div>
+              ${d.kind ? `<div class="idtl-row-sub">${d.kind}</div>` : ''}
+            </div>
+            <button class="idtl-row-del" data-action="del-drink" data-id="${d.id}"><i class="ti ti-x"></i></button>
+          </div>`).join('') : '<div class="idtl-empty-sm">no favorites logged yet</div>'}
+      </div>
+    </div>
+
+    <div class="idtl-section">
+      <div class="idtl-section-hdr"><span>taste profile</span></div>
+      <div class="idtl-add-row">
+        <input class="idtl-input" id="alc-tag-input" placeholder="e.g. smoky, dry, sweet..." />
+        <button class="idtl-add-btn" data-action="add-tag"><i class="ti ti-plus"></i></button>
+      </div>
+      <div class="idtl-tags">
+        ${tags.length ? tags.map(t => `<span class="idtl-tag">${t}<button data-action="del-tag" data-tag="${t}"><i class="ti ti-x"></i></button></span>`).join('') : '<div class="idtl-empty-sm">no taste tags yet</div>'}
+      </div>
+    </div>
+
+    <div class="idtl-section">
+      <div class="idtl-section-hdr"><span>notes</span></div>
+      <textarea class="idtl-input idtl-textarea" id="alc-notes-input" placeholder="anything else worth remembering...">${h.notes||''}</textarea>
+      <button class="idtl-action-btn" data-action="save-notes" style="margin-top:8px"><i class="ti ti-check"></i> save notes</button>
+    </div>
+
+    <div class="idtl-section">
+      <div class="idtl-section-hdr"><span>recommendations</span></div>
+      <button class="idtl-action-btn" data-action="get-recs"><i class="ti ti-sparkles"></i> get recommendations</button>
+      <div id="idtl-recs" class="idtl-recs"></div>
+    </div>`;
+}
+
+function wireAlcoholEvents(h) {
+  const body = document.getElementById('idtl-body');
+  body.querySelector('[data-action="add-drink"]')?.addEventListener('click', () => {
+    const nameEl = document.getElementById('alc-drink-name');
+    const kindEl = document.getElementById('alc-drink-kind');
+    const name = nameEl.value.trim();
+    if (!name) { nameEl.focus(); return; }
+    if (!h.drinks) h.drinks = [];
+    h.drinks.unshift({ id:'d'+Date.now(), name, kind: kindEl.value.trim() });
+    save(); refreshInterestDetail();
+  });
+  body.querySelectorAll('[data-action="del-drink"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      h.drinks = (h.drinks||[]).filter(d => d.id !== btn.dataset.id);
+      save(); refreshInterestDetail();
+    });
+  });
+  body.querySelector('[data-action="add-tag"]')?.addEventListener('click', () => {
+    const inp = document.getElementById('alc-tag-input');
+    const tag = inp.value.trim().toLowerCase();
+    if (!tag) { inp.focus(); return; }
+    if (!h.tasteTags) h.tasteTags = [];
+    if (!h.tasteTags.includes(tag)) h.tasteTags.push(tag);
+    save(); refreshInterestDetail();
+  });
+  body.querySelectorAll('[data-action="del-tag"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      h.tasteTags = (h.tasteTags||[]).filter(t => t !== btn.dataset.tag);
+      save(); refreshInterestDetail();
+    });
+  });
+  body.querySelector('[data-action="save-notes"]')?.addEventListener('click', () => {
+    h.notes = document.getElementById('alc-notes-input').value.trim();
+    save(); refreshInterestDetail();
+  });
+  body.querySelector('[data-action="get-recs"]')?.addEventListener('click', () => getInterestRecommendations(h, 'alcohol'));
+}
+
+// ─────────────────────────────────────────────────────────
+// ANIME — each entry is one title
+// ─────────────────────────────────────────────────────────
+function animeDetailHTML(h) {
+  const characters = h.characters || [];
+  const tags = h.tasteTags || [];
+  return `
+    <div class="idtl-section">
+      <div class="idtl-section-hdr"><span>status</span></div>
+      <div class="modal-type-row">
+        ${ANIME_STATUSES.map(s => `<button class="modal-type-btn ${h.status===s?'active':''}" data-action="set-status" data-status="${s}">${s}</button>`).join('')}
+      </div>
+    </div>
+
+    <div class="idtl-section">
+      <div class="idtl-section-hdr"><span>character tier list</span></div>
+      <div class="idtl-add-row">
+        <input class="idtl-input" id="anime-char-input" placeholder="character name" />
+        <select class="idtl-select idtl-select-sm" id="anime-tier-input">
+          ${ANIME_TIERS.map(t => `<option value="${t}">${t}</option>`).join('')}
+        </select>
+        <button class="idtl-add-btn" data-action="add-char"><i class="ti ti-plus"></i></button>
+      </div>
+      <div class="idtl-tierlist">
+        ${ANIME_TIERS.map(tier => {
+          const inTier = characters.filter(ch => ch.tier === tier);
+          if (!inTier.length) return '';
+          return `<div class="idtl-tier-row">
+            <div class="idtl-tier-badge" style="background:${TIER_COLORS[tier]}">${tier}</div>
+            <div class="idtl-tier-chars">
+              ${inTier.map(ch => `<span class="idtl-char-chip">${ch.name}<button data-action="del-char" data-id="${ch.id}"><i class="ti ti-x"></i></button></span>`).join('')}
+            </div>
+          </div>`;
+        }).join('') || '<div class="idtl-empty-sm">no characters ranked yet</div>'}
+      </div>
+    </div>
+
+    <div class="idtl-section">
+      <div class="idtl-section-hdr"><span>taste</span></div>
+      <div class="idtl-add-row">
+        <input class="idtl-input" id="anime-tag-input" placeholder="e.g. shounen, slow burn, isekai..." />
+        <button class="idtl-add-btn" data-action="add-tag"><i class="ti ti-plus"></i></button>
+      </div>
+      <div class="idtl-tags">
+        ${tags.length ? tags.map(t => `<span class="idtl-tag">${t}<button data-action="del-tag" data-tag="${t}"><i class="ti ti-x"></i></button></span>`).join('') : '<div class="idtl-empty-sm">no taste tags yet</div>'}
+      </div>
+    </div>
+
+    <div class="idtl-section">
+      <div class="idtl-section-hdr"><span>recommendations</span></div>
+      <button class="idtl-action-btn" data-action="get-recs"><i class="ti ti-sparkles"></i> get recommendations</button>
+      <div id="idtl-recs" class="idtl-recs"></div>
+    </div>`;
+}
+
+function wireAnimeEvents(h) {
+  const body = document.getElementById('idtl-body');
+  body.querySelectorAll('[data-action="set-status"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      h.status = btn.dataset.status;
+      save(); refreshInterestDetail();
+    });
+  });
+  body.querySelector('[data-action="add-char"]')?.addEventListener('click', () => {
+    const nameEl = document.getElementById('anime-char-input');
+    const tierEl = document.getElementById('anime-tier-input');
+    const name = nameEl.value.trim();
+    if (!name) { nameEl.focus(); return; }
+    if (!h.characters) h.characters = [];
+    h.characters.push({ id:'c'+Date.now(), name, tier: tierEl.value });
+    save(); refreshInterestDetail();
+  });
+  body.querySelectorAll('[data-action="del-char"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      h.characters = (h.characters||[]).filter(c => c.id !== btn.dataset.id);
+      save(); refreshInterestDetail();
+    });
+  });
+  body.querySelector('[data-action="add-tag"]')?.addEventListener('click', () => {
+    const inp = document.getElementById('anime-tag-input');
+    const tag = inp.value.trim().toLowerCase();
+    if (!tag) { inp.focus(); return; }
+    if (!h.tasteTags) h.tasteTags = [];
+    if (!h.tasteTags.includes(tag)) h.tasteTags.push(tag);
+    save(); refreshInterestDetail();
+  });
+  body.querySelectorAll('[data-action="del-tag"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      h.tasteTags = (h.tasteTags||[]).filter(t => t !== btn.dataset.tag);
+      save(); refreshInterestDetail();
+    });
+  });
+  body.querySelector('[data-action="get-recs"]')?.addEventListener('click', () => getInterestRecommendations(h, 'anime'));
+}
+
+// ─────────────────────────────────────────────────────────
+// GAMES — each entry is one game
+// ─────────────────────────────────────────────────────────
+function gamesDetailHTML(h) {
+  const characters = h.characters || [];
+  const reminders = h.reminders || [];
+  return `
+    <div class="idtl-section">
+      <div class="idtl-section-hdr"><span>account</span></div>
+      <div class="idtl-add-row">
+        <input class="idtl-input" id="game-uid-input" placeholder="UID / username" value="${h.uid||''}" />
+        <button class="idtl-add-btn" data-action="save-uid"><i class="ti ti-check"></i></button>
+      </div>
+    </div>
+
+    <div class="idtl-section">
+      <div class="idtl-section-hdr"><span>characters</span></div>
+      <div class="idtl-add-row">
+        <input class="idtl-input" id="game-char-input" placeholder="character name" />
+        <select class="idtl-select idtl-select-sm" id="game-char-tier-input">
+          ${ANIME_TIERS.map(t => `<option value="${t}">${t}</option>`).join('')}
+        </select>
+        <button class="idtl-add-btn" data-action="add-game-char"><i class="ti ti-plus"></i></button>
+      </div>
+      <div class="idtl-tierlist">
+        ${ANIME_TIERS.map(tier => {
+          const inTier = characters.filter(ch => ch.tier === tier);
+          if (!inTier.length) return '';
+          return `<div class="idtl-tier-row">
+            <div class="idtl-tier-badge" style="background:${TIER_COLORS[tier]}">${tier}</div>
+            <div class="idtl-tier-chars">
+              ${inTier.map(ch => `<span class="idtl-char-chip">${ch.name}<button data-action="del-game-char" data-id="${ch.id}"><i class="ti ti-x"></i></button></span>`).join('')}
+            </div>
+          </div>`;
+        }).join('') || '<div class="idtl-empty-sm">no characters added yet</div>'}
+      </div>
+    </div>
+
+    <div class="idtl-section">
+      <div class="idtl-section-hdr"><span>reminders</span></div>
+      <div class="idtl-add-row idtl-add-row-wrap">
+        <input class="idtl-input" id="game-reminder-input" placeholder="e.g. claim daily login" />
+        <select class="idtl-select idtl-select-sm" id="game-reminder-recur">
+          ${REMINDER_RECURRENCE.map(r => `<option value="${r}">${r}</option>`).join('')}
+        </select>
+        <button class="idtl-add-btn" data-action="add-reminder"><i class="ti ti-plus"></i></button>
+      </div>
+      <div class="idtl-list">
+        ${reminders.length ? reminders.map(r => `
+          <div class="idtl-row">
+            <div class="idtl-row-main">
+              <div class="idtl-row-title">${r.text}</div>
+              <div class="idtl-row-sub">${r.recurrence}${r.lastDone ? ' · done ' + formatNoteTime(r.lastDone) : ''}</div>
+            </div>
+            <button class="idtl-reminder-check" data-action="check-reminder" data-id="${r.id}"><i class="ti ti-check"></i></button>
+            <button class="idtl-row-del" data-action="del-reminder" data-id="${r.id}"><i class="ti ti-x"></i></button>
+          </div>`).join('') : '<div class="idtl-empty-sm">no reminders set</div>'}
+      </div>
+    </div>`;
+}
+
+function wireGamesEvents(h) {
+  const body = document.getElementById('idtl-body');
+  body.querySelector('[data-action="save-uid"]')?.addEventListener('click', () => {
+    h.uid = document.getElementById('game-uid-input').value.trim();
+    save(); refreshInterestDetail();
+  });
+  body.querySelector('[data-action="add-game-char"]')?.addEventListener('click', () => {
+    const nameEl = document.getElementById('game-char-input');
+    const tierEl = document.getElementById('game-char-tier-input');
+    const name = nameEl.value.trim();
+    if (!name) { nameEl.focus(); return; }
+    if (!h.characters) h.characters = [];
+    h.characters.push({ id:'c'+Date.now(), name, tier: tierEl.value });
+    save(); refreshInterestDetail();
+  });
+  body.querySelectorAll('[data-action="del-game-char"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      h.characters = (h.characters||[]).filter(c => c.id !== btn.dataset.id);
+      save(); refreshInterestDetail();
+    });
+  });
+  body.querySelector('[data-action="add-reminder"]')?.addEventListener('click', () => {
+    const textEl = document.getElementById('game-reminder-input');
+    const recurEl = document.getElementById('game-reminder-recur');
+    const text = textEl.value.trim();
+    if (!text) { textEl.focus(); return; }
+    if (!h.reminders) h.reminders = [];
+    h.reminders.push({ id:'r'+Date.now(), text, recurrence: recurEl.value, lastDone: null, interestId: h.id, interestName: h.name });
+    save(); refreshInterestDetail();
+  });
+  body.querySelectorAll('[data-action="check-reminder"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const r = (h.reminders||[]).find(x => x.id === btn.dataset.id);
+      if (r) { r.lastDone = Date.now(); save(); refreshInterestDetail(); }
+    });
+  });
+  body.querySelectorAll('[data-action="del-reminder"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      h.reminders = (h.reminders||[]).filter(r => r.id !== btn.dataset.id);
+      save(); refreshInterestDetail();
+    });
+  });
+}
+
+function wireInterestDetailEvents(h) {
+  const type = h.type || 'generic';
+  if (type === 'alcohol') wireAlcoholEvents(h);
+  else if (type === 'anime') wireAnimeEvents(h);
+  else if (type === 'games') wireGamesEvents(h);
+}
+
+// ─────────────────────────────────────────────────────────
+// AI RECOMMENDATIONS — based on sibling entries of the same type
+// ─────────────────────────────────────────────────────────
+async function getInterestRecommendations(h, type) {
+  const recsEl = document.getElementById('idtl-recs');
+  if (!recsEl) return;
+  recsEl.innerHTML = '<div class="idtl-recs-loading">thinking...</div>';
+
+  let prompt = '';
+  if (type === 'alcohol') {
+    const favs = (h.drinks||[]).map(d => `${d.name}${d.kind?' ('+d.kind+')':''}`).join(', ') || 'none yet';
+    const tags = (h.tasteTags||[]).join(', ') || 'none specified';
+    prompt = `Based on these favorite drinks: ${favs}. Taste preferences: ${tags}. Suggest 3 drinks they might like, each with a one-sentence reason. Respond ONLY with valid JSON: {"items":[{"name":"...","reason":"..."}]}`;
+  } else if (type === 'anime') {
+    const siblings = S.hobbies.filter(x => x.type === type);
+    const watched = siblings.filter(w=>w.status==='completed').map(w=>w.name).join(', ') || h.name;
+    const tags = [...new Set(siblings.flatMap(s => s.tasteTags||[]))].join(', ') || 'none specified';
+    prompt = `Based on completed anime: ${watched}. Taste preferences: ${tags}. Suggest 3 anime they might like, each with a one-sentence reason. Respond ONLY with valid JSON: {"items":[{"name":"...","reason":"..."}]}`;
+  }
+  if (!prompt) { recsEl.innerHTML = ''; return; }
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 400, messages: [{ role: 'user', content: prompt }] }),
+    });
+    const data = await res.json();
+    const text = data.content?.find(b => b.type === 'text')?.text || '{}';
+    const parsed = JSON.parse(text.replace(/```json|```/g,'').trim());
+    const items = parsed.items || [];
+    recsEl.innerHTML = items.length
+      ? items.map(it => `<div class="idtl-rec"><div class="idtl-rec-name">${it.name}</div><div class="idtl-rec-reason">${it.reason}</div></div>`).join('')
+      : '<div class="idtl-empty-sm">no suggestions came back — try adding more favorites first</div>';
+  } catch(e) {
+    recsEl.innerHTML = '<div class="idtl-empty-sm">couldn\'t fetch recommendations right now</div>';
+  }
+}
+
+
 // ─── HOBBY MODAL ──────────────────────────────────────────
-const HOBBY_ICONS = ['ti-crosshair','ti-trophy','ti-brush','ti-barbell','ti-camera','ti-music','ti-book','ti-run','ti-bike','ti-swim','ti-chess','ti-palette','ti-code','ti-pencil','ti-heart','ti-leaf','ti-star','ti-flame','ti-bolt','ti-moon','ti-plant','ti-paw','ti-chef-hat','ti-guitar-pick','ti-dice'];
-let _editingHobbyId = null, _hmColor = 'sage', _hmIcon = 'ti-star';
+const HOBBY_ICONS = ['ti-crosshair','ti-trophy','ti-brush','ti-barbell','ti-camera','ti-music','ti-book','ti-run','ti-bike','ti-swim','ti-chess','ti-palette','ti-code','ti-pencil','ti-heart','ti-leaf','ti-star','ti-flame','ti-bolt','ti-moon','ti-plant','ti-paw','ti-chef-hat','ti-guitar-pick','ti-dice','ti-glass-cocktail','ti-movie','ti-device-gamepad-2'];
+let _editingHobbyId = null, _hmColor = 'sage', _hmIcon = 'ti-star', _hmType = 'generic';
 
 function openHobbyModal(id = null) {
   _editingHobbyId = id;
   const h = id ? S.hobbies.find(x => x.id === id) : null;
-  document.getElementById('modal-title').textContent = h ? 'edit hobby' : 'add hobby';
-  document.getElementById('hm-name').value = h ? h.name : '';
+  document.getElementById('modal-title').textContent = h ? 'edit' : 'add interest';
   document.getElementById('hm-delete').style.display = h ? 'block' : 'none';
-  _hmColor = h ? h.color : 'sage'; _hmIcon = h ? h.icon : 'ti-star';
+  _hmColor = h ? h.color : 'sage';
+  _hmIcon  = h ? h.icon  : 'ti-star';
+  _hmType  = h ? (h.type || 'generic') : 'generic';
+
+  const typeRow = document.getElementById('hm-type-row');
+  typeRow.innerHTML = '';
+  INTEREST_TYPES.forEach(t => {
+    const meta = t;
+    const alreadyExists = meta.mode === 'categorical' && S.hobbies.some(x => x.type === t.id);
+    const b = document.createElement('button');
+    b.className = 'modal-type-btn' + (t.id === _hmType ? ' active' : '');
+    b.innerHTML = `<i class="ti ${t.icon}"></i> ${t.label}`;
+    b.disabled = !!h || (alreadyExists && !h); // can't change type after creation, or re-add a categorical type that already exists
+    b.onclick = () => {
+      if (h) return;
+      _hmType = t.id;
+      typeRow.querySelectorAll('.modal-type-btn').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      if (t.id !== 'generic') _hmIcon = t.icon;
+      updateNameFieldVisibility();
+    };
+    typeRow.appendChild(b);
+  });
+  updateNameFieldVisibility();
+  document.getElementById('hm-name').value = h ? h.name : '';
+
   const colorsEl = document.getElementById('hm-colors'); colorsEl.innerHTML = '';
   for (const [key, c] of Object.entries(HOBBY_COLORS)) {
     const s = document.createElement('div');
@@ -2431,17 +3264,41 @@ function openHobbyModal(id = null) {
   document.getElementById('hobby-modal').classList.remove('hidden');
   setTimeout(() => document.getElementById('hm-name').focus(), 50);
 }
+
+function updateNameFieldVisibility() {
+  const meta = INTEREST_TYPES.find(t => t.id === _hmType);
+  const fieldWrap = document.getElementById('hm-name-field');
+  const inp = document.getElementById('hm-name');
+  if (meta?.mode === 'categorical') {
+    fieldWrap.style.display = 'none';
+    inp.value = meta.label; // auto-named, hidden from user
+  } else {
+    fieldWrap.style.display = '';
+    const hints = {
+      generic: 'e.g. guitar, journaling, drawing...',
+      anime:   'e.g. Frieren, Attack on Titan...',
+      games:   'e.g. Wuthering Waves, Genshin Impact...',
+    };
+    inp.placeholder = hints[_hmType] || hints.generic;
+  }
+}
+
 function closeHobbyModal() { document.getElementById('hobby-modal-overlay').classList.add('hidden'); document.getElementById('hobby-modal').classList.add('hidden'); _editingHobbyId = null; }
 function saveHobby() {
-  const name = document.getElementById('hm-name').value.trim();
+  const meta = INTEREST_TYPES.find(t => t.id === _hmType);
+  const name = meta?.mode === 'categorical' ? meta.label : document.getElementById('hm-name').value.trim();
   if (!name) { document.getElementById('hm-name').focus(); return; }
   if (_editingHobbyId) {
     const h = S.hobbies.find(x => x.id === _editingHobbyId);
     if (h) { h.name = name; h.color = _hmColor; h.icon = _hmIcon; }
-    logActivity('edited hobby: '+name, 'add');
+    logActivity('edited: '+name, 'add');
   } else {
-    S.hobbies.push({ id:'h'+Date.now(), name, icon:_hmIcon, color:_hmColor, sessions:0 });
-    logActivity('added hobby: '+name, 'add');
+    const base = { id:'h'+Date.now(), name, icon:_hmIcon, color:_hmColor, type:_hmType, sessions:0 };
+    if (_hmType === 'alcohol') { base.drinks = []; base.tasteTags = []; base.notes = ''; }
+    if (_hmType === 'anime')   { base.status = 'planned'; base.characters = []; base.tasteTags = []; }
+    if (_hmType === 'games')   { base.uid = ''; base.characters = []; base.reminders = []; }
+    S.hobbies.push(base);
+    logActivity('added: '+name, 'add');
   }
   save(); renderHobbies(); closeHobbyModal();
 }
@@ -2449,7 +3306,7 @@ function deleteHobby() {
   if (!_editingHobbyId) return;
   const h = S.hobbies.find(x => x.id === _editingHobbyId);
   if (!h || !confirm(`Delete "${h.name}"?`)) return;
-  logActivity('deleted hobby: '+h.name, 'delete');
+  logActivity('deleted: '+h.name, 'delete');
   S.hobbies = S.hobbies.filter(x => x.id !== _editingHobbyId);
   save(); renderHobbies(); closeHobbyModal();
 }
@@ -2499,7 +3356,7 @@ function saveGoal() {
     if (g) { g.name=name; g.desc=desc; g.max=max; g.cur=cur; g.color=_gmColor; g.icon=_gmIcon; }
     logActivity('edited goal: '+name, 'goal');
   } else {
-    S.goals.push({ id:'g'+Date.now(), name, desc, icon:_gmIcon, color:_gmColor, cur, max });
+    S.goals.push({ id:'g'+Date.now(), name, desc, icon:_gmIcon, color:_gmColor, cur, max, createdAt: Date.now() });
     logActivity('added goal: '+name, 'goal');
   }
   save(); renderGoals(); closeGoalModal();

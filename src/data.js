@@ -27,6 +27,20 @@ const STAT_META = {
   energy:      { bar: 'var(--rose)',   label: 'energy',      tip: 'competitive'       },
 };
 
+// ─── INTEREST TYPES ───────────────────────────────────────
+const INTEREST_TYPES = [
+  { id: 'generic', label: 'general',  icon: 'ti-sparkles',             mode: 'specific'   },
+  { id: 'alcohol', label: 'alcohol',  icon: 'ti-glass-cocktail',       mode: 'categorical' },
+  { id: 'anime',   label: 'anime',    icon: 'ti-movie',                mode: 'specific'   },
+  { id: 'games',   label: 'games',    icon: 'ti-device-gamepad-2',     mode: 'specific'   },
+];
+
+const ANIME_STATUSES = ['watching', 'completed', 'planned', 'dropped'];
+const ANIME_TIERS = ['S', 'A', 'B', 'C', 'D'];
+const TIER_COLORS = { S: 'var(--rose)', A: 'var(--amber)', B: 'var(--sage)', C: 'var(--sky-c)', D: 'var(--ink3)' };
+
+const REMINDER_RECURRENCE = ['daily', 'weekly', 'once'];
+
 // ─── DEFAULT STATE ────────────────────────────────────────
 const DEFAULT_STATE = {
   lastLogin:         null,
@@ -42,4 +56,5 @@ const DEFAULT_STATE = {
   todos:             [],
   journal:           {}, // { 'YYYY-MM-DD': { text, ts, mood } }
   notes:             [], // { id, text, pinned, color, createdAt, updatedAt }
+  savedLocation:     null, // { lat, lon, label } — set in settings to skip the GPS prompt
 };
