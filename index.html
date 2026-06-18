@@ -157,7 +157,20 @@
           </div>
         </div>
 
-        <!-- shinkansen scene — fills remaining space -->
+        <!-- pulse — tailored news about what's on your board -->
+        <div id="pulse-section">
+          <div class="pulse-hdr">
+            <div class="pulse-hdr-left">
+              <i class="ti ti-antenna"></i>
+              <span class="eyebrow" style="margin:0">pulse</span>
+            </div>
+            <button class="pulse-refresh-btn" id="pulse-refresh-btn" onclick="loadPulse()">
+              <i class="ti ti-refresh"></i>
+            </button>
+          </div>
+          <div id="pulse-list"><div class="pulse-empty">tap refresh to load stories tailored to your interests</div></div>
+        </div>
+
         <div id="shinkansen-scene">
           <svg id="shinkansen-svg" viewBox="0 0 400 90" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
             <!-- sky -->
@@ -234,22 +247,28 @@
                 <div class="mc-date" id="goals-card-date"></div>
               </div>
               <div class="mc-identity" id="goals-card-identity"></div>
-              <div class="goals-ring-wrap">
-                <svg viewBox="0 0 120 120" class="goals-overview-ring">
-                  <circle cx="60" cy="60" r="50" fill="none" stroke="var(--line)" stroke-width="8"/>
-                  <circle cx="60" cy="60" r="50" fill="none" stroke="var(--sage)" stroke-width="8"
-                    id="goals-overview-circle" stroke-dasharray="314.16" stroke-dashoffset="314.16"
-                    stroke-linecap="round" transform="rotate(-90 60 60)"/>
+
+              <!-- large hero ring -->
+              <div class="gc-hero">
+                <svg viewBox="0 0 160 160" class="gc-hero-ring">
+                  <circle cx="80" cy="80" r="68" fill="none" stroke="var(--line)" stroke-width="8"/>
+                  <circle cx="80" cy="80" r="68" fill="none" stroke="var(--sage)" stroke-width="8"
+                    id="goals-overview-circle" stroke-dasharray="427.26" stroke-dashoffset="427.26"
+                    stroke-linecap="round" transform="rotate(-90 80 80)"/>
                 </svg>
-                <div class="goals-ring-label">
-                  <div class="goals-ring-pct" id="goals-ring-pct">0%</div>
-                  <div class="goals-ring-sub">avg progress</div>
+                <div class="gc-hero-center">
+                  <div class="gc-hero-pct" id="goals-ring-pct">0%</div>
+                  <div class="gc-hero-sub">avg progress</div>
                 </div>
               </div>
-              <div class="mc-section-label">breakdown</div>
-              <div class="mc-stats" id="goals-card-stats"></div>
-              <div class="mc-section-label" style="margin-top:14px">closest to done</div>
-              <div id="goals-card-closest"></div>
+
+              <!-- key numbers -->
+              <div class="gc-stats-row" id="goals-card-stats"></div>
+
+              <!-- per-goal bars -->
+              <div class="mc-section-label" style="margin-top:18px;padding-top:18px;border-top:1px solid var(--line)">breakdown</div>
+              <div id="goals-card-bars"></div>
+
               <div class="mc-footer">hanagara</div>
             </div>
           </div>
@@ -316,11 +335,15 @@
                 <div class="mc-date" id="mc-date"></div>
               </div>
               <div class="mc-identity" id="mc-identity"></div>
-              <div class="mc-pie-wrap">
-                <canvas id="mc-pie" width="160" height="160"></canvas>
-                <div class="mc-pie-legend" id="mc-pie-legend"></div>
+
+              <!-- full-width donut chart in SVG -->
+              <div class="mc-chart-wrap">
+                <svg id="mc-pie-svg" viewBox="0 0 200 200" class="mc-pie-svg"></svg>
+                <div class="mc-chart-center" id="mc-chart-center"></div>
               </div>
-              <div class="mc-section-label">top artists</div>
+              <div class="mc-pie-legend" id="mc-pie-legend"></div>
+
+              <div class="mc-section-label" style="margin-top:18px;padding-top:18px;border-top:1px solid var(--line)">top artists</div>
               <div id="mc-artists"></div>
               <div class="mc-section-label" style="margin-top:14px">moods</div>
               <div class="mc-moods" id="mc-moods"></div>
@@ -448,30 +471,18 @@
       <div id="spirit-orb" onclick="spiritToggle()"></div>
     </div>
 
-    <!-- BOTTOM NAV -->
+    <!-- BOTTOM NAV — all tabs in one scrollable bar, no more drawer -->
     <nav class="bottom-nav" id="bottom-nav">
-      <button class="bnb" id="bnb-world"   onclick="nav('world')">world</button>
-      <button class="bnb" id="bnb-hobbies" onclick="nav('hobbies')">interests</button>
-      <button class="bnb" id="bnb-goals"   onclick="nav('goals')">goals</button>
-      <button class="bnb" id="bnb-todos"   onclick="nav('todos')">todos</button>
-      <button class="bnb" id="bnb-music"   onclick="nav('music')">music</button>
-      <button class="bnb bnb-more" id="bnb-more" onclick="toggleMoreDrawer()">
-        <span class="bnb-more-label">more</span>
-        <span class="bnb-more-dots"><span></span><span></span><span></span></span>
-      </button>
+      <button class="bnb" id="bnb-world"    onclick="nav('world')"><i class="ti ti-home"></i><span>world</span></button>
+      <button class="bnb" id="bnb-hobbies"  onclick="nav('hobbies')"><i class="ti ti-sparkles"></i><span>interests</span></button>
+      <button class="bnb" id="bnb-goals"    onclick="nav('goals')"><i class="ti ti-target-arrow"></i><span>goals</span></button>
+      <button class="bnb" id="bnb-todos"    onclick="nav('todos')"><i class="ti ti-checklist"></i><span>todos</span></button>
+      <button class="bnb" id="bnb-music"    onclick="nav('music')"><i class="ti ti-music"></i><span>music</span></button>
+      <button class="bnb" id="bnb-journal"  onclick="nav('journal')"><i class="ti ti-notebook"></i><span>journal</span></button>
+      <button class="bnb" id="bnb-notes"    onclick="nav('notes')"><i class="ti ti-notes"></i><span>notes</span></button>
+      <button class="bnb" id="bnb-history"  onclick="nav('history')"><i class="ti ti-history"></i><span>history</span></button>
+      <button class="bnb" id="bnb-settings" onclick="nav('settings')"><i class="ti ti-settings"></i><span>settings</span></button>
     </nav>
-
-    <!-- MORE DRAWER -->
-    <div class="more-overlay hidden" id="more-overlay" onclick="closeMoreDrawer()"></div>
-    <div class="more-drawer hidden" id="more-drawer">
-      <div class="more-drawer-handle"></div>
-      <div class="more-drawer-grid">
-        <button class="more-btn" id="mbtn-journal"  onclick="navMore('journal')">journal</button>
-        <button class="more-btn" id="mbtn-notes"    onclick="navMore('notes')">notes</button>
-        <button class="more-btn" id="mbtn-history"  onclick="navMore('history')">history</button>
-        <button class="more-btn" id="mbtn-settings" onclick="navMore('settings')">settings</button>
-      </div>
-    </div>
 
   </div><!-- end app -->
 

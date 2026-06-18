@@ -4,12 +4,18 @@ const STORAGE_KEY = 'hanagara-v1';
 const TABS = ['world', 'hobbies', 'goals', 'todos', 'music', 'journal', 'notes', 'history', 'settings'];
 
 const THEMES = [
-  { id: 'default', label: 'white',  bg: ['#fdfcfa', '#f5f2ed', '#c8c4be', '#1c1a16'] },
-  { id: 'warm',    label: 'warm',   bg: ['#faf7f3', '#f2eeea', '#c8c0b4', '#1c1a14'] },
-  { id: 'dark',    label: 'dark',   bg: ['#0e0d0b', '#171613', '#444440', '#f0ece4'] },
-  { id: 'dusk',    label: 'dusk',   bg: ['#111018', '#191822', '#5a5278', '#e8e4f6'] },
-  { id: 'teal',    label: 'teal',   bg: ['#0c181c', '#121e22', '#406460', '#d8eee8'] },
-  { id: 'stone',   label: 'stone',  bg: ['#f0eee9', '#e8e5de', '#aaa89e', '#1c1a16'] },
+  { id: 'default',  label: 'paper',     bg: ['#fefefe',  '#f7f6f4', '#a8a498', '#18170f'] },
+  { id: 'warm',     label: 'parchment', bg: ['#faf4e8',  '#f3ead8', '#b8a888', '#1e1a0e'] },
+  { id: 'ember',    label: 'ember',     bg: ['#f7ece6',  '#f0e0d8', '#c8a898', '#1e1208'] },
+  { id: 'rose',     label: 'rose',      bg: ['#faf0f0',  '#f2e6e6', '#c8a0a0', '#1e1010'] },
+  { id: 'stone',    label: 'stone',     bg: ['#f0f0ef',  '#e6e6e4', '#a0a0a0', '#141414'] },
+  { id: 'slate',    label: 'slate',     bg: ['#f0f3f8',  '#e4eaf2', '#8898b0', '#0e1420'] },
+  { id: 'dark',     label: 'charcoal',  bg: ['#111110',  '#1a1a19', '#606058', '#f2f0ec'] },
+  { id: 'ink',      label: 'ink',       bg: ['#090910',  '#0e0e18', '#404060', '#e0e0f0'] },
+  { id: 'dusk',     label: 'midnight',  bg: ['#080c14',  '#0e1420', '#3a4e6a', '#d8e4f8'] },
+  { id: 'grape',    label: 'grape',     bg: ['#1e1828',  '#261e32', '#584870', '#e8e0f8'] },
+  { id: 'plum',     label: 'plum',      bg: ['#120e18',  '#1a1422', '#483860', '#f0e8f8'] },
+  { id: 'teal',     label: 'matcha',    bg: ['#2a3228',  '#323c30', '#607858', '#e8f0e0'] },
 ];
 
 const HOBBY_COLORS = {
@@ -33,11 +39,16 @@ const INTEREST_TYPES = [
   { id: 'alcohol', label: 'alcohol',  icon: 'ti-glass-cocktail',       mode: 'categorical' },
   { id: 'anime',   label: 'anime',    icon: 'ti-movie',                mode: 'specific'   },
   { id: 'games',   label: 'games',    icon: 'ti-device-gamepad-2',     mode: 'specific'   },
+  { id: 'book',    label: 'books',    icon: 'ti-book',                 mode: 'specific'   },
+  { id: 'fitness', label: 'fitness',  icon: 'ti-run',                  mode: 'specific'   },
 ];
 
-const ANIME_STATUSES = ['watching', 'completed', 'planned', 'dropped'];
+const ANIME_STATUSES   = ['watching', 'completed', 'planned', 'dropped'];
+const BOOK_STATUSES    = ['reading', 'completed', 'want to read', 'dropped'];
+const FITNESS_TYPES    = ['run', 'lift', 'cycle', 'swim', 'walk', 'yoga', 'sport', 'other'];
 const ANIME_TIERS = ['S', 'A', 'B', 'C', 'D'];
 const TIER_COLORS = { S: 'var(--rose)', A: 'var(--amber)', B: 'var(--sage)', C: 'var(--sky-c)', D: 'var(--ink3)' };
+const BOOK_STATUS_COLORS = { 'reading': 'var(--amber)', 'completed': 'var(--sage)', 'want to read': 'var(--sky-c)', 'dropped': 'var(--ink3)' };
 
 const REMINDER_RECURRENCE = ['daily', 'weekly', 'once'];
 

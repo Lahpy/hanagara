@@ -555,29 +555,53 @@ function renderHistory() {
     return;
   }
   el.innerHTML = '';
-  let lastDate = null;
+
+  // group by calendar day
+  const byDay = {};
   for (const entry of log) {
     const d = new Date(entry.ts);
-    const day = d.toDateString();
-    if (day !== lastDate) {
-      lastDate = day;
-      const hdr = document.createElement('div');
-      hdr.className = 'hist-date';
-      hdr.textContent = day === new Date().toDateString() ? 'today' : d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-      el.appendChild(hdr);
+    const dayKey = d.toDateString();
+    if (!byDay[dayKey]) byDay[dayKey] = { entries: [], date: d };
+    byDay[dayKey].entries.push(entry);
+  }
+
+  const TYPE_COLOR = { hobby: 'hist-icon-hobby', todo: 'hist-icon-todo', goal: 'hist-icon-goal', music: 'hist-icon-music' };
+
+  for (const [dayKey, { entries, date }] of Object.entries(byDay)) {
+    const isToday = dayKey === new Date().toDateString();
+    const dateLabel = isToday ? 'today' : date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+
+    // build a short summary: "2 sessions · 1 task · 3 songs"
+    const counts = { hobby: 0, todo: 0, goal: 0, music: 0 };
+    entries.forEach(e => { if (counts[e.type] !== undefined) counts[e.type]++; });
+    const summaryParts = [
+      counts.hobby ? `${counts.hobby} session${counts.hobby!==1?'s':''}` : null,
+      counts.todo  ? `${counts.todo} task${counts.todo!==1?'s':''}` : null,
+      counts.goal  ? `${counts.goal} goal${counts.goal!==1?'s':''}` : null,
+      counts.music ? `${counts.music} song${counts.music!==1?'s':''}` : null,
+    ].filter(Boolean).join(' · ');
+
+    const hdr = document.createElement('div');
+    hdr.className = 'hist-date';
+    hdr.innerHTML = `<span>${dateLabel}</span>${summaryParts ? `<span class="hist-date-summary">${summaryParts}</span>` : ''}`;
+    el.appendChild(hdr);
+
+    for (const entry of entries) {
+      const icon = ACTIVITY_ICONS[entry.type] || ACTIVITY_ICONS['action'];
+      const colorClass = TYPE_COLOR[entry.type] || 'hist-icon-action';
+      const d = new Date(entry.ts);
+      const row = document.createElement('div');
+      row.className = 'hist-row';
+      row.innerHTML = `
+        <i class="ti ${icon} hist-icon ${colorClass}"></i>
+        <div class="hist-source">
+          <div>${entry.label}</div>
+          ${entry.note ? `<div class="hist-note">${entry.note}</div>` : ''}
+        </div>
+        <div class="hist-time">${d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}</div>
+        <button class="hist-del" onclick="deleteActivity('${entry.id}')"><i class="ti ti-x"></i></button>`;
+      el.appendChild(row);
     }
-    const icon = ACTIVITY_ICONS[entry.type] || ACTIVITY_ICONS['action'];
-    const row = document.createElement('div');
-    row.className = 'hist-row';
-    row.innerHTML = `
-      <i class="ti ${icon} hist-icon"></i>
-      <div class="hist-source">
-        <div>${entry.label}</div>
-        ${entry.note ? `<div class="hist-note">${entry.note}</div>` : ''}
-      </div>
-      <div class="hist-time">${d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}</div>
-      <button class="hist-del" onclick="deleteActivity('${entry.id}')"><i class="ti ti-x"></i></button>`;
-    el.appendChild(row);
   }
 }
 
@@ -641,11 +665,11 @@ function getDueReminders() {
   const due = [];
   (S.hobbies||[]).filter(h => h.type === 'games').forEach(h => {
     (h.reminders||[]).forEach(r => {
-      if (!r.lastDone) { due.push(r); return; }
+      const rem = { ...r, interestId: h.id, interestName: h.name }; // always pull from parent
+      if (!r.lastDone) { due.push(rem); return; }
       const sinceMs = now - r.lastDone;
-      if (r.recurrence === 'daily'  && sinceMs > 20*3600000) due.push(r);
-      if (r.recurrence === 'weekly' && sinceMs > 6.5*86400000) due.push(r);
-      // 'once' reminders never re-trigger once done
+      if (r.recurrence === 'daily'  && sinceMs > 20*3600000) due.push(rem);
+      if (r.recurrence === 'weekly' && sinceMs > 6.5*86400000) due.push(rem);
     });
   });
   return due;
@@ -673,6 +697,101 @@ function renderRemindersBanner() {
       if (r) { r.lastDone = Date.now(); save(); renderRemindersBanner(); }
     });
   });
+}
+
+// ─── PULSE — tailored news feed ───────────────────────────
+let _pulseLastLoad = 0;
+
+async function loadPulse() {
+  const listEl = document.getElementById('pulse-list');
+  const btnEl  = document.getElementById('pulse-refresh-btn');
+  if (!listEl) return;
+
+  // throttle: don't refetch if loaded within last 10 minutes
+  if (Date.now() - _pulseLastLoad < 10 * 60000 && listEl.children.length && !listEl.querySelector('.pulse-empty')) return;
+
+  listEl.innerHTML = '<div class="pulse-loading"><i class="ti ti-loader-2 pulse-spinner"></i> fetching stories...</div>';
+  if (btnEl) btnEl.classList.add('pulse-refreshing');
+
+  // build queries from what's actually on the board
+  const queries = [];
+  const games = (S.hobbies||[]).filter(h => h.type === 'games');
+  games.forEach(g => queries.push(`${g.name} latest patch notes news 2025 2026`));
+
+  const anime = (S.hobbies||[]).filter(h => h.type === 'anime' && (h.status === 'watching' || h.status === 'planned'));
+  anime.forEach(a => queries.push(`${a.name} anime news episodes release`));
+
+  const books = (S.hobbies||[]).filter(h => h.type === 'book' && h.status === 'reading');
+  books.forEach(b => queries.push(`${b.name}${b.author?' '+b.author:''} book news`));
+
+  const alcohol = (S.hobbies||[]).find(h => h.type === 'alcohol');
+  if (alcohol && (alcohol.drinks||[]).length) {
+    const kinds = [...new Set((alcohol.drinks||[]).map(d=>d.kind).filter(Boolean))];
+    const tags  = (alcohol.tasteTags||[]).slice(0,3);
+    queries.push(`new ${kinds[0]||'whiskey'} releases ${tags.length?tags.join(' '):'recommended'} 2025 2026`);
+  }
+
+  const fitness = (S.hobbies||[]).filter(h => h.type === 'fitness');
+  fitness.forEach(f => queries.push(`${f.activityType||'fitness'} training tips news`));
+
+  if (!queries.length) {
+    listEl.innerHTML = '<div class="pulse-empty">add some interests to your board first</div>';
+    if (btnEl) btnEl.classList.remove('pulse-refreshing');
+    return;
+  }
+
+  const systemPrompt = `You are a news curator for a personal life terminal. 
+Given search queries about the user's current interests, find and summarise the most relevant, recent, specific news items.
+Return ONLY valid JSON — no prose, no markdown fences: {"items":[{"title":"...","summary":"one sentence, specific and factual","source":"site name","url":"https://...","topic":"..."}]}
+Max 6 items total. Prefer: patch notes, character reveals, release dates, specific product launches, author news — not generic opinion pieces or roundups.`;
+
+  const userMsg = `Find recent news for these interest queries:\n${queries.map((q,i) => `${i+1}. ${q}`).join('\n')}\n\nReturn the top 5-6 most interesting, specific, recent items as JSON.`;
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1000,
+        system: systemPrompt,
+        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+        messages: [{ role: 'user', content: userMsg }],
+      }),
+    });
+    const data = await res.json();
+    // collect all text blocks from potentially multi-turn tool use response
+    const textBlock = data.content?.filter(b => b.type === 'text').map(b => b.text).join('');
+    if (!textBlock) throw new Error('no text response');
+    const clean = textBlock.replace(/```json|```/g,'').trim();
+    const parsed = JSON.parse(clean);
+    const items = parsed.items || [];
+    _pulseLastLoad = Date.now();
+
+    if (!items.length) {
+      listEl.innerHTML = '<div class="pulse-empty">nothing found right now — try again later</div>';
+    } else {
+      listEl.innerHTML = items.map(item => `
+        <div class="pulse-item">
+          <div class="pulse-item-topic">${escapeHtml(item.topic||'')}</div>
+          <div class="pulse-item-title">${escapeHtml(item.title)}</div>
+          <div class="pulse-item-summary">${escapeHtml(item.summary)}</div>
+          <div class="pulse-item-meta">
+            <span>${escapeHtml(item.source||'')}</span>
+            ${item.url ? `<a href="${escapeHtml(item.url)}" target="_blank" rel="noopener" class="pulse-item-link">read <i class="ti ti-arrow-up-right"></i></a>` : ''}
+          </div>
+        </div>`).join('');
+    }
+  } catch(e) {
+    console.error('pulse error', e);
+    listEl.innerHTML = '<div class="pulse-empty">couldn\'t load stories right now</div>';
+  }
+  if (btnEl) btnEl.classList.remove('pulse-refreshing');
 }
 
 function renderNowStrip() {
@@ -873,7 +992,7 @@ function updateNavDots() {
   const today = todayKey();
   const hasJournalToday = !!(S.journal?.[today]?.text?.trim());
   const shouldDotJournal = !hasJournalToday && (Object.keys(S.journal||{}).length > 0 || (S.activityLog||[]).length > 0);
-  setNavDot('journal', shouldDotJournal, 'mbtn');
+  setNavDot('journal', shouldDotJournal, 'bnb');
 }
 
 function setNavDot(tab, show, prefix = 'bnb') {
@@ -898,6 +1017,7 @@ function renderAll() {
   renderNowStrip();
   updateNavDots();
   initShinkansenScene();
+  applySpiritMood();
 }
 
 // ─── SHINKANSEN SCENE (decorative, world tab) ─────────────
@@ -973,33 +1093,24 @@ function interestTileOverview(h) {
 
   if (type === 'alcohol') {
     const drinks = h.drinks || [];
-    const tags = (h.tasteTags||[]).slice(0,4);
-    const topNames = drinks.slice(0,2).map(d=>d.name).join(', ');
-    return `
-      <div class="interest-tile-stat-row">
-        <span class="interest-tile-stat-num">${drinks.length}</span>
-        <span class="interest-tile-stat-lbl">favorite${drinks.length!==1?'s':''} logged</span>
-      </div>
-      ${topNames ? `<div class="interest-tile-line"><strong>recent:</strong> ${topNames}${drinks.length>2?'...':''}</div>` : '<div class="interest-tile-line">nothing logged yet</div>'}
-      ${tags.length ? `<div class="interest-tile-chips">${tags.map(t=>`<span class="interest-tile-chip">${t}</span>`).join('')}</div>` : ''}
-    `;
+    const rows = drinks.slice(0,3).map(d => `<div class="interest-tile-row"><span>${d.name}</span></div>`);
+    if (!rows.length) rows.push('<div class="interest-tile-row interest-tile-row-empty"><span>nothing logged yet</span></div>');
+    return rows.join('');
   }
 
   if (type === 'anime') {
-    const charCount = (h.characters||[]).length;
-    const tags = (h.tasteTags||[]).slice(0,3);
-    const topChars = (h.characters||[]).filter(c=>c.tier==='S').slice(0,3).map(c=>c.name);
-    return `
-      <div class="interest-tile-chips">
-        <span class="interest-tile-chip anime-status-${h.status||'planned'}" style="border-color:currentColor">${h.status||'planned'}</span>
-      </div>
-      <div class="interest-tile-line">${charCount ? `<strong>${charCount}</strong> character${charCount!==1?'s':''} ranked` : 'no characters ranked yet'}${topChars.length ? ` · S-tier: ${topChars.join(', ')}` : ''}</div>
-      ${tags.length ? `<div class="interest-tile-chips">${tags.map(t=>`<span class="interest-tile-chip">${t}</span>`).join('')}</div>` : ''}
-    `;
+    const rows = [`<div class="interest-tile-row"><span class="anime-status-${h.status||'planned'}">${h.status||'planned'}</span></div>`];
+    const chars = (h.characters||[]).slice(0,2);
+    chars.forEach(c => rows.push(`<div class="interest-tile-row"><span>${c.name}</span></div>`));
+    if (!chars.length) rows.push('<div class="interest-tile-row interest-tile-row-empty"><span>no characters yet</span></div>');
+    return rows.join('');
   }
 
   if (type === 'games') {
-    const charCount = (h.characters||[]).length;
+    const rows = [];
+    rows.push(`<div class="interest-tile-row"><span>${h.uid ? `UID ${h.uid}` : 'no UID set'}</span></div>`);
+    const chars = (h.characters||[]).slice(0,2);
+    chars.forEach(c => rows.push(`<div class="interest-tile-row"><span>${c.name}</span></div>`));
     const reminders = h.reminders || [];
     const due = reminders.filter(r => {
       if (!r.lastDone) return true;
@@ -1008,23 +1119,31 @@ function interestTileOverview(h) {
       if (r.recurrence === 'weekly') return since > 6.5*86400000;
       return false;
     }).length;
+    if (reminders.length) rows.push(`<div class="interest-tile-row"><span>${due ? `${due} due` : 'caught up'}</span></div>`);
+    return rows.join('');
+  }
+
+  if (type === 'book') {
+    const rows = [];
+    rows.push(`<div class="interest-tile-row"><span style="color:${BOOK_STATUS_COLORS[h.status||'want to read']}">${h.status||'want to read'}</span></div>`);
+    if (h.author) rows.push(`<div class="interest-tile-row"><span>${h.author}</span></div>`);
+    if (h.rating) rows.push(`<div class="interest-tile-row"><span>${'★'.repeat(h.rating)}${'☆'.repeat(5-h.rating)}</span></div>`);
+    else if (!h.author) rows.push(`<div class="interest-tile-row interest-tile-row-empty"><span>tap to add details</span></div>`);
+    return rows.join('');
+  }
+
+  if (type === 'fitness') {
     return `
-      <div class="interest-tile-line">${h.uid ? `<strong>UID</strong> ${h.uid}` : 'no UID set'}</div>
-      <div class="interest-tile-stat-row">
-        <span class="interest-tile-stat-num">${charCount}</span>
-        <span class="interest-tile-stat-lbl">character${charCount!==1?'s':''}</span>
-      </div>
-      <div class="interest-tile-line">${reminders.length ? `${due ? `<strong>${due}</strong> reminder${due!==1?'s':''} due` : 'all reminders caught up'} · ${reminders.length} total` : 'no reminders set'}</div>
+      <div class="interest-tile-row"><span>${h.activityType || 'activity'}</span></div>
+      <div class="interest-tile-row"><span>${h.sessions||0} sessions</span></div>
+      <div class="interest-tile-row"><span>${h.streak ? `${h.streak}d streak` : 'no streak'}</span></div>
     `;
   }
 
   // generic
   return `
-    <div class="interest-tile-stat-row">
-      <span class="interest-tile-stat-num">${h.sessions||0}</span>
-      <span class="interest-tile-stat-lbl">session${h.sessions===1?'':'s'} logged</span>
-    </div>
-    ${h.streak ? `<div class="interest-tile-line"><strong>${h.streak} day</strong> streak going</div>` : '<div class="interest-tile-line">no streak yet — log one to start</div>'}
+    <div class="interest-tile-row"><span>${h.sessions||0} sessions</span></div>
+    <div class="interest-tile-row"><span>${h.streak ? `${h.streak}d streak` : 'no streak yet'}</span></div>
   `;
 }
 
@@ -1040,62 +1159,49 @@ function renderHobbies() {
     return;
   }
 
-  // group by type, in INTEREST_TYPES order
-  const order = INTEREST_TYPES.map(t => t.id);
-  const groups = {};
-  visible.forEach(h => { const t = h.type || 'generic'; (groups[t] = groups[t] || []).push(h); });
+  const grid = document.createElement('div');
+  grid.className = 'interest-grid';
 
-  order.forEach(typeId => {
-    const items = groups[typeId];
-    if (!items || !items.length) return;
-    const typeMeta = INTEREST_TYPES.find(t => t.id === typeId);
-
-    const section = document.createElement('div');
-    section.className = 'interest-section';
-    section.innerHTML = `<div class="interest-section-hdr"><i class="ti ${typeMeta.icon}"></i><span>${typeMeta.label}</span></div>`;
-
-    const grid = document.createElement('div');
-    grid.className = 'interest-grid';
-
-    items.forEach(h => {
-      const c = HOBBY_COLORS[h.color] || HOBBY_COLORS.sage;
-      const overview = interestTileOverview(h);
-      const tile = document.createElement('div');
-      tile.className = 'interest-tile';
-      tile.draggable = true;
-      tile.dataset.id = h.id;
-      tile.innerHTML = `
-        <button class="interest-tile-edit" onclick="event.stopPropagation();openHobbyModal('${h.id}')"><i class="ti ti-pencil"></i></button>
-        <div class="interest-tile-top">
-          <div class="interest-tile-thumb" style="background:${c.bg};color:${c.fill}"><i class="ti ${h.icon}"></i></div>
-          <div class="interest-tile-titlewrap">
-            <div class="interest-tile-name">${h.name}</div>
-          </div>
-        </div>
-        <div class="interest-tile-overview">${overview}</div>
-        ${typeId === 'generic' ? `<button class="interest-tile-log" onclick="event.stopPropagation();logHobby('${h.id}', this)"><i class="ti ti-plus"></i> log</button>` : ''}
-      `;
-      tile.addEventListener('click', (e) => {
-        if (e.target.closest('.interest-tile-edit') || e.target.closest('.interest-tile-log')) return;
-        if (typeId === 'generic') openHobbyModal(h.id);
-        else openInterestDetail(h.id);
-      });
-      tile.addEventListener('dragstart', e => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', h.id); setTimeout(() => tile.classList.add('dragging'), 0); });
-      tile.addEventListener('dragend',  () => tile.classList.remove('dragging'));
-      tile.addEventListener('dragover', e => { e.preventDefault(); tile.classList.add('drag-over'); });
-      tile.addEventListener('dragleave',() => tile.classList.remove('drag-over'));
-      tile.addEventListener('drop', e => {
-        e.preventDefault(); tile.classList.remove('drag-over');
-        const from = S.hobbies.findIndex(x => x.id === e.dataTransfer.getData('text/plain'));
-        const to   = S.hobbies.findIndex(x => x.id === h.id);
-        if (from !== to) { const [m] = S.hobbies.splice(from, 1); S.hobbies.splice(to, 0, m); save(); renderHobbies(); }
-      });
-      grid.appendChild(tile);
+  visible.forEach(h => {
+    const typeId = h.type || 'generic';
+    const c = HOBBY_COLORS[h.color] || HOBBY_COLORS.sage;
+    const overview = interestTileOverview(h);
+    const tile = document.createElement('div');
+    tile.className = 'interest-tile';
+    tile.draggable = true;
+    tile.dataset.id = h.id;
+    tile.innerHTML = `
+      <button class="interest-tile-edit" onclick="event.stopPropagation();openHobbyModal('${h.id}')"><i class="ti ti-pencil"></i></button>
+      <div class="interest-tile-name">${h.name}</div>
+      <div class="interest-tile-thumb" style="background:${c.bg};color:${c.fill}"><i class="ti ${h.icon}"></i></div>
+      <div class="interest-tile-overview">${overview}</div>
+      ${typeId === 'generic' ? `<button class="interest-tile-log" onclick="event.stopPropagation();logHobby('${h.id}', this)"><i class="ti ti-plus"></i> log</button>` : ''}
+    `;
+    tile.addEventListener('click', (e) => {
+      if (e.target.closest('.interest-tile-edit') || e.target.closest('.interest-tile-log')) return;
+      if (typeId === 'generic') openHobbyModal(h.id);
+      else openInterestDetail(h.id);
     });
-
-    section.appendChild(grid);
-    list.appendChild(section);
+    tile.addEventListener('dragstart', e => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', h.id); setTimeout(() => tile.classList.add('dragging'), 0); });
+    tile.addEventListener('dragend',  () => tile.classList.remove('dragging'));
+    tile.addEventListener('dragover', e => { e.preventDefault(); tile.classList.add('drag-over'); });
+    tile.addEventListener('dragleave',() => tile.classList.remove('drag-over'));
+    tile.addEventListener('drop', e => {
+      e.preventDefault(); tile.classList.remove('drag-over');
+      const fromId = e.dataTransfer.getData('text/plain');
+      if (fromId === h.id) return;
+      const from = S.hobbies.findIndex(x => x.id === fromId);
+      const to   = S.hobbies.findIndex(x => x.id === h.id);
+      if (from !== -1 && to !== -1 && from !== to) {
+        const [m] = S.hobbies.splice(from, 1);
+        S.hobbies.splice(to, 0, m);
+        save(); renderHobbies();
+      }
+    });
+    grid.appendChild(tile);
   });
+
+  list.appendChild(grid);
 }
 
 // ─── RENDER: GOALS ────────────────────────────────────────
@@ -1174,33 +1280,26 @@ function renderGoals() {
 }
 
 function renderGoalsOverview() {
-  const dateEl = document.getElementById('goals-card-date');
+  const dateEl    = document.getElementById('goals-card-date');
   const identityEl = document.getElementById('goals-card-identity');
-  const circleEl = document.getElementById('goals-overview-circle');
-  const pctEl = document.getElementById('goals-ring-pct');
-  const statsEl = document.getElementById('goals-card-stats');
-  const closestEl = document.getElementById('goals-card-closest');
+  const circleEl  = document.getElementById('goals-overview-circle');
+  const pctEl     = document.getElementById('goals-ring-pct');
+  const statsEl   = document.getElementById('goals-card-stats');
+  const barsEl    = document.getElementById('goals-card-bars');
   if (!dateEl) return;
 
   dateEl.textContent = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
-  const goals = S.goals || [];
+  const goals    = S.goals || [];
   const complete = goals.filter(g => g.cur >= g.max);
-  const active = goals.filter(g => g.cur < g.max);
-  const avgPct = goals.length ? Math.round(goals.reduce((a,g) => a + Math.min(100,(g.cur/g.max)*100), 0) / goals.length) : 0;
+  const active   = goals.filter(g => g.cur < g.max);
+  const avgPct   = goals.length ? Math.round(goals.reduce((a,g) => a + Math.min(100,(g.cur/g.max)*100), 0) / goals.length) : 0;
 
   identityEl.textContent = goals.length
-    ? (avgPct >= 70 ? 'closing in on everything' : avgPct >= 35 ? 'steady progress across the board' : 'early days')
+    ? (avgPct >= 70 ? 'closing in on everything' : avgPct >= 35 ? 'steady progress' : 'early days')
     : 'nothing set yet';
 
-  const circumference = 2 * Math.PI * 50;
-  if (circleEl) {
-    requestAnimationFrame(() => {
-      circleEl.style.strokeDashoffset = circumference * (1 - avgPct/100);
-    });
-  }
-  if (pctEl) pctEl.textContent = `${avgPct}%`;
-
+  // key stats
   if (statsEl) {
     statsEl.innerHTML = `
       <div class="mc-stat"><div class="mc-stat-num">${goals.length}</div><div class="mc-stat-lbl">total</div></div>
@@ -1208,15 +1307,48 @@ function renderGoalsOverview() {
       <div class="mc-stat"><div class="mc-stat-num">${complete.length}</div><div class="mc-stat-lbl">done</div></div>`;
   }
 
-  if (closestEl) {
-    const closest = [...active].sort((a,b) => (b.cur/b.max) - (a.cur/a.max)).slice(0,3);
-    closestEl.innerHTML = closest.length
-      ? closest.map(g => {
-          const pct = Math.round((g.cur/g.max)*100);
-          return `<div class="goals-closest-row"><span class="goals-closest-name">${g.name}</span><span class="goals-closest-pct">${pct}%</span></div>`;
-        }).join('')
-      : '<div class="idtl-empty-sm">nothing in progress</div>';
+  // per-goal progress bars
+  if (barsEl) {
+    barsEl.innerHTML = goals.length ? goals.map(g => {
+      const pct  = Math.min(100, Math.round((g.cur/g.max)*100));
+      const done = g.cur >= g.max;
+      const c    = HOBBY_COLORS[g.color] || HOBBY_COLORS.sage;
+      let pace = '';
+      if (!done && g.createdAt) {
+        const days = Math.max(1, Math.floor((Date.now()-g.createdAt)/86400000));
+        const perDay = pct/days;
+        const left   = perDay > 0 ? Math.ceil((100-pct)/perDay) : null;
+        pace = left && left < 365 ? `~${left}d left` : '';
+      }
+      return `
+        <div class="gc-bar-row">
+          <div class="gc-bar-meta">
+            <span class="gc-bar-name">${g.name}</span>
+            <span class="gc-bar-pct" style="color:${done?'var(--sage)':c.fill}">${done?'✓':pct+'%'}</span>
+          </div>
+          <div class="gc-bar-track">
+            <div class="gc-bar-fill" style="width:0%;background:${done?'var(--sage)':c.fill}" data-w="${pct}"></div>
+          </div>
+          ${pace ? `<div class="gc-bar-pace">${pace}</div>` : ''}
+        </div>`;
+    }).join('') : '<div class="idtl-empty-sm">no goals yet</div>';
+
+    requestAnimationFrame(() => {
+      barsEl.querySelectorAll('.gc-bar-fill').forEach(el => {
+        requestAnimationFrame(() => { el.style.transition = 'width .9s cubic-bezier(.4,0,.2,1)'; el.style.width = el.dataset.w + '%'; });
+      });
+    });
   }
+
+  // hero avg ring (r=68, circumference=427.26)
+  const circumference = 2 * Math.PI * 68;
+  if (circleEl) {
+    requestAnimationFrame(() => {
+      circleEl.style.transition = 'stroke-dashoffset 1s ease';
+      circleEl.style.strokeDashoffset = circumference * (1 - avgPct/100);
+    });
+  }
+  if (pctEl) pctEl.textContent = `${avgPct}%`;
 }
 
 // ─── CALENDAR ─────────────────────────────────────────────
@@ -1492,7 +1624,10 @@ function addTodo() {
 
 // ─── MUSIC ────────────────────────────────────────────────
 let musicSort = 'recent';
-const GENRE_PALETTE = ['#2c2c2c','#555','#888','#aaa','#ccc','#444','#666','#999','#bbb','#ddd'];
+const GENRE_PALETTE = [
+  'var(--rose)', 'var(--sky-c)', 'var(--sage)', 'var(--violet)',
+  'var(--amber)', 'var(--gold)', 'var(--ink2)', 'var(--ink3)',
+];
 
 function setMusicSort(sort) {
   musicSort = sort;
@@ -1633,27 +1768,48 @@ function renderMusicCard() {
 }
 
 function drawPieChart(genres) {
-  const canvas = document.getElementById('mc-pie');
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  const cx = canvas.width/2, cy = canvas.height/2, r = Math.min(cx,cy) - 4;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const svg = document.getElementById('mc-pie-svg');
+  const center = document.getElementById('mc-chart-center');
+  if (!svg) return;
+  svg.innerHTML = '';
   const total = genres.reduce((a,g) => a + g.count, 0);
-  let startAngle = -Math.PI/2;
-  genres.forEach(({ count, color }) => {
-    const slice = (count/total) * Math.PI * 2;
-    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, r, startAngle, startAngle + slice);
-    ctx.closePath(); ctx.fillStyle = color; ctx.fill();
-    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--bg') || '#fdfcfa';
-    ctx.lineWidth = 1.5; ctx.stroke();
+  if (!total) return;
+
+  const cx = 100, cy = 100, r = 80, inner = 52;
+  let startAngle = -Math.PI / 2;
+
+  genres.forEach(({ count, color, genre }) => {
+    const slice = (count / total) * Math.PI * 2;
+    const x1 = cx + r * Math.cos(startAngle);
+    const y1 = cy + r * Math.sin(startAngle);
+    const x2 = cx + r * Math.cos(startAngle + slice);
+    const y2 = cy + r * Math.sin(startAngle + slice);
+    const xi1 = cx + inner * Math.cos(startAngle);
+    const yi1 = cy + inner * Math.sin(startAngle);
+    const xi2 = cx + inner * Math.cos(startAngle + slice);
+    const yi2 = cy + inner * Math.sin(startAngle + slice);
+    const large = slice > Math.PI ? 1 : 0;
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', `M${xi1},${yi1} A${inner},${inner} 0 ${large} 1 ${xi2},${yi2} L${x2},${y2} A${r},${r} 0 ${large} 0 ${x1},${y1} Z`);
+    path.setAttribute('fill', color);
+    path.style.transition = 'opacity .2s';
+    path.style.cursor = 'default';
+    svg.appendChild(path);
     startAngle += slice;
   });
-  ctx.beginPath(); ctx.arc(cx, cy, r * 0.52, 0, Math.PI*2);
-  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--bg') || '#fdfcfa';
-  ctx.fill();
-}
 
-function deleteMusicEntry(id) { S.musicLog = (S.musicLog||[]).filter(e => e.id !== id); save(); renderMusicTab(); }
+  // stroke separator ring
+  const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#fdfcfa';
+  const sep = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  sep.setAttribute('cx', cx); sep.setAttribute('cy', cy); sep.setAttribute('r', inner);
+  sep.setAttribute('fill', bg);
+  svg.appendChild(sep);
+
+  // center text
+  if (center && genres[0]) {
+    center.innerHTML = `<div class="mc-chart-pct">${Math.round((genres[0].count/total)*100)}%</div><div class="mc-chart-genre">${genres[0].genre}</div>`;
+  }
+}
 
 // ─── JOURNAL ──────────────────────────────────────────────
 const JOURNAL_MOODS = ['😶','😌','🙂','😊','😄'];
@@ -1738,19 +1894,21 @@ function renderJournalPast() {
     const mood = entry.mood != null ? JOURNAL_MOODS[entry.mood] : '';
     const preview = (entry.text||'').slice(0,120) + ((entry.text||'').length > 120 ? '…' : '');
 
+    const wordCount = (entry.text||'').trim().split(/\s+/).filter(Boolean).length;
+
     const card = document.createElement('div');
     card.className = 'journal-past-card';
     card.innerHTML = `
       <div class="journal-past-header">
         <div class="journal-past-date">${dateStr}</div>
         ${mood ? `<div class="journal-past-mood">${mood}</div>` : ''}
+        <div class="journal-past-wc">${wordCount}w</div>
         <button class="journal-past-del" onclick="deleteJournalEntry('${dateKey}')"><i class="ti ti-x"></i></button>
       </div>
-      <div class="journal-past-text">${preview}</div>`;
+      <div class="journal-past-text">${escapeHtml(entry.text||'')}</div>`;
 
-    // click to expand / edit
-    card.querySelector('.journal-past-text').addEventListener('click', () => {
-      expandJournalEntry(dateKey, card, entry);
+    card.querySelector('.journal-past-text').addEventListener('click', function() {
+      this.classList.toggle('expanded');
     });
     list.appendChild(card);
   }
@@ -1885,9 +2043,8 @@ function renderNotes() {
 
     const card = document.createElement('div');
     card.className = 'note-card' + (note.pinned ? ' note-pinned' : '');
-    card.style.background   = c.bg;
-    card.style.borderColor  = c.border;
-    card.dataset.id         = note.id;
+    card.dataset.id    = note.id;
+    card.dataset.color = note.color || 'none';
 
     card.innerHTML = `
       <div class="note-toolbar">
@@ -2148,8 +2305,7 @@ function maybeWeeklyRecap() {
 }
 
 // ─── BOTTOM NAV ───────────────────────────────────────────
-const BOTTOM_TABS = ['world','hobbies','goals','todos','music'];
-const MORE_TABS   = ['journal','notes','history','settings'];
+const BOTTOM_TABS = ['world','hobbies','goals','todos','music','journal','notes','history','settings'];
 
 function nav(name) {
   TABS.forEach(t => {
@@ -2158,16 +2314,9 @@ function nav(name) {
     panel?.classList.toggle('hidden', t !== name);
   });
 
-  // bottom bar active state
+  // bottom bar active state — all tabs now in one bar
   BOTTOM_TABS.forEach(t => {
     document.getElementById('bnb-' + t)?.classList.toggle('bnb-on', t === name);
-  });
-
-  // more button active if a more-tab is selected
-  const moreActive = MORE_TABS.includes(name);
-  document.getElementById('bnb-more')?.classList.toggle('bnb-on', moreActive);
-  MORE_TABS.forEach(t => {
-    document.getElementById('mbtn-' + t)?.classList.toggle('more-btn-on', t === name);
   });
 
   if (name === 'world')    { resumeBlossom(); }
@@ -2179,38 +2328,18 @@ function nav(name) {
   if (name === 'notes')    { renderNotes(); initNoteColorBar(); }
   if (name === 'settings') renderSettings();
   updateNavDots();
-}
 
-function navMore(name) {
-  closeMoreDrawer();
-  nav(name);
-}
-
-let _moreOpen = false;
-function toggleMoreDrawer() {
-  _moreOpen ? closeMoreDrawer() : openMoreDrawer();
-}
-function openMoreDrawer() {
-  _moreOpen = true;
-  document.getElementById('more-drawer')?.classList.remove('hidden');
-  document.getElementById('more-overlay')?.classList.remove('hidden');
-  document.getElementById('bnb-more')?.classList.add('bnb-on');
+  // scroll active tab button into view in the nav bar
   requestAnimationFrame(() => {
-    document.getElementById('more-drawer')?.classList.add('more-drawer-open');
+    document.getElementById('bnb-' + name)?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
   });
 }
-function closeMoreDrawer() {
-  _moreOpen = false;
-  const drawer = document.getElementById('more-drawer');
-  drawer?.classList.remove('more-drawer-open');
-  setTimeout(() => {
-    drawer?.classList.add('hidden');
-    document.getElementById('more-overlay')?.classList.add('hidden');
-  }, 280);
-  // don't remove active state if a more tab is selected
-  const currentMoreActive = MORE_TABS.some(t => document.getElementById('panel-'+t)?.classList.contains('on'));
-  if (!currentMoreActive) document.getElementById('bnb-more')?.classList.remove('bnb-on');
-}
+
+// kept as no-ops so any lingering calls don't throw
+function navMore(name) { nav(name); }
+function toggleMoreDrawer() {}
+function openMoreDrawer() {}
+function closeMoreDrawer() {}
 
 // ─── INTRO + ENTER ────────────────────────────────────────
 // ─── INTRO SKY + FLOWER ───────────────────────────────────
@@ -2613,6 +2742,14 @@ function deriveMood() {
   return 'quiet';
 }
 
+function applySpiritMood() {
+  const orb = document.getElementById('spirit-orb');
+  if (!orb) return;
+  const mood = deriveMood();
+  if (S.spiritMood !== mood) { S.spiritMood = mood; save(); }
+  orb.dataset.mood = mood;
+}
+
 function buildSpiritPrompt(screenContext) {
   const h = S.hobbies.map(x => `${x.name} [${x.type||'generic'}] (id:${x.id}, ${x.sessions||0} sessions)`).join(', ') || 'none';
   const g = S.goals.map(x => `${x.name} (id:${x.id}, ${x.cur}/${x.max})`).join(', ') || 'none';
@@ -2859,8 +2996,10 @@ function renderInterestDetailBody(h) {
   if (!body) return;
   const type = h.type || 'generic';
   if (type === 'alcohol') body.innerHTML = alcoholDetailHTML(h);
-  else if (type === 'anime') body.innerHTML = animeDetailHTML(h);
-  else if (type === 'games') body.innerHTML = gamesDetailHTML(h);
+  else if (type === 'anime')   body.innerHTML = animeDetailHTML(h);
+  else if (type === 'games')   body.innerHTML = gamesDetailHTML(h);
+  else if (type === 'book')    body.innerHTML = bookDetailHTML(h);
+  else if (type === 'fitness') body.innerHTML = fitnessDetailHTML(h);
   else body.innerHTML = '<div class="idtl-empty">nothing special here — just log sessions from the interests list.</div>';
   wireInterestDetailEvents(h);
 }
@@ -3162,11 +3301,170 @@ function wireGamesEvents(h) {
   });
 }
 
+// ─────────────────────────────────────────────────────────
+// BOOK / MANGA
+// ─────────────────────────────────────────────────────────
+function bookDetailHTML(h) {
+  const stars = h.rating || 0;
+  return `
+    <div class="idtl-section">
+      <div class="idtl-section-hdr"><span>details</span></div>
+      <div class="idtl-add-row">
+        <input class="idtl-input" id="book-author-input" placeholder="author" value="${h.author||''}" />
+        <button class="idtl-add-btn" data-action="save-author"><i class="ti ti-check"></i></button>
+      </div>
+      <div class="idtl-row" style="margin-top:8px;align-items:center;gap:6px">
+        <label style="font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink3)">manga</label>
+        <input type="checkbox" id="book-manga-toggle" ${h.isManga?'checked':''} style="cursor:pointer">
+      </div>
+    </div>
+
+    <div class="idtl-section">
+      <div class="idtl-section-hdr"><span>status</span></div>
+      <div class="idtl-tags" style="gap:6px">
+        ${BOOK_STATUSES.map(s => `<button class="idtl-action-btn ${h.status===s?'idtl-action-btn-active':''}" data-action="set-status" data-status="${s}" style="${h.status===s?`border-color:${BOOK_STATUS_COLORS[s]};color:${BOOK_STATUS_COLORS[s]}`:''}">${s}</button>`).join('')}
+      </div>
+    </div>
+
+    <div class="idtl-section">
+      <div class="idtl-section-hdr"><span>rating</span></div>
+      <div class="book-stars" id="book-stars">
+        ${[1,2,3,4,5].map(i => `<button class="book-star-btn ${stars>=i?'active':''}" data-star="${i}">★</button>`).join('')}
+      </div>
+    </div>
+
+    <div class="idtl-section">
+      <div class="idtl-section-hdr"><span>notes</span></div>
+      <textarea class="idtl-input idtl-textarea" id="book-notes-input" placeholder="thoughts, quotes, things to remember...">${h.notes||''}</textarea>
+      <button class="idtl-action-btn" data-action="save-notes" style="margin-top:8px"><i class="ti ti-check"></i> save notes</button>
+    </div>
+
+    <div class="idtl-section">
+      <div class="idtl-section-hdr"><span>recommendations</span></div>
+      <button class="idtl-action-btn" data-action="get-recs"><i class="ti ti-sparkles"></i> get recommendations</button>
+      <div id="idtl-recs" class="idtl-recs"></div>
+    </div>`;
+}
+
+function wireBookEvents(h) {
+  const body = document.getElementById('idtl-body');
+  body.querySelector('[data-action="save-author"]')?.addEventListener('click', () => {
+    h.author = document.getElementById('book-author-input').value.trim();
+    save(); refreshInterestDetail();
+  });
+  document.getElementById('book-manga-toggle')?.addEventListener('change', function() {
+    h.isManga = this.checked; save(); refreshInterestDetail();
+  });
+  body.querySelectorAll('[data-action="set-status"]').forEach(btn => {
+    btn.addEventListener('click', () => { h.status = btn.dataset.status; save(); refreshInterestDetail(); });
+  });
+  body.querySelectorAll('.book-star-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const n = parseInt(btn.dataset.star);
+      h.rating = h.rating === n ? null : n; // toggle off if same
+      save(); refreshInterestDetail();
+    });
+  });
+  body.querySelector('[data-action="save-notes"]')?.addEventListener('click', () => {
+    h.notes = document.getElementById('book-notes-input').value.trim();
+    save(); refreshInterestDetail();
+  });
+  body.querySelector('[data-action="get-recs"]')?.addEventListener('click', () => getInterestRecommendations(h, 'book'));
+}
+
+// ─────────────────────────────────────────────────────────
+// FITNESS
+// ─────────────────────────────────────────────────────────
+function fitnessDetailHTML(h) {
+  const log = (h.log||[]).slice(0,10);
+  return `
+    <div class="idtl-section">
+      <div class="idtl-section-hdr"><span>activity type</span></div>
+      <div class="idtl-tags" style="flex-wrap:wrap;gap:6px">
+        ${FITNESS_TYPES.map(t => `<button class="idtl-action-btn ${h.activityType===t?'idtl-action-btn-active':''}" data-action="set-activity" data-activity="${t}">${t}</button>`).join('')}
+      </div>
+    </div>
+
+    <div class="idtl-section">
+      <div class="idtl-section-hdr"><span>log session</span></div>
+      <div class="idtl-add-row">
+        <input class="idtl-input idtl-input-sm" id="fitness-mins-input" type="number" min="1" max="600" placeholder="mins" style="max-width:80px"/>
+        <input class="idtl-input" id="fitness-note-input" placeholder="note (optional)" />
+        <button class="idtl-add-btn" data-action="log-session"><i class="ti ti-plus"></i></button>
+      </div>
+    </div>
+
+    <div class="idtl-section">
+      <div class="idtl-section-hdr"><span>stats</span></div>
+      <div class="idtl-row" style="justify-content:space-around;padding:8px 0">
+        <div style="text-align:center">
+          <div style="font-family:'Libre Baskerville',serif;font-style:italic;font-size:22px;color:var(--ink)">${h.sessions||0}</div>
+          <div style="font-size:8px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3)">sessions</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-family:'Libre Baskerville',serif;font-style:italic;font-size:22px;color:var(--ink)">${h.streak||0}</div>
+          <div style="font-size:8px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3)">day streak</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-family:'Libre Baskerville',serif;font-style:italic;font-size:22px;color:var(--ink)">${h.totalMins||0}</div>
+          <div style="font-size:8px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3)">total mins</div>
+        </div>
+      </div>
+    </div>
+
+    ${log.length ? `
+    <div class="idtl-section">
+      <div class="idtl-section-hdr"><span>recent sessions</span></div>
+      <div class="idtl-list">
+        ${log.map(entry => {
+          const d = new Date(entry.ts);
+          const label = d.toLocaleDateString(undefined, {month:'short', day:'numeric'});
+          return `<div class="idtl-row">
+            <div class="idtl-row-main">
+              <div class="idtl-row-title">${entry.mins} min${entry.note ? ` · ${entry.note}` : ''}</div>
+              <div class="idtl-row-sub">${label}</div>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>` : ''}`;
+}
+
+function wireFitnessEvents(h) {
+  const body = document.getElementById('idtl-body');
+  body.querySelectorAll('[data-action="set-activity"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      h.activityType = btn.dataset.activity;
+      save(); refreshInterestDetail();
+    });
+  });
+  body.querySelector('[data-action="log-session"]')?.addEventListener('click', () => {
+    const minsEl = document.getElementById('fitness-mins-input');
+    const noteEl = document.getElementById('fitness-note-input');
+    const mins = parseInt(minsEl.value) || 0;
+    if (mins <= 0) { minsEl.focus(); return; }
+    if (!h.log) h.log = [];
+    h.log.unshift({ id:'fl'+Date.now(), mins, note: noteEl.value.trim(), ts: Date.now() });
+    h.sessions = (h.sessions||0) + 1;
+    h.totalMins = (h.totalMins||0) + mins;
+    // simple streak: check if last session was today or yesterday
+    const today = new Date(); today.setHours(0,0,0,0);
+    const lastTs = h.log[1]?.ts;
+    const lastDay = lastTs ? new Date(lastTs) : null;
+    if (lastDay) { lastDay.setHours(0,0,0,0); const diff = (today - lastDay)/86400000; h.streak = diff <= 1 ? (h.streak||0)+1 : 1; }
+    else h.streak = 1;
+    logActivity(`logged ${h.name} session (${mins}min)`, 'hobby');
+    save(); refreshInterestDetail();
+  });
+}
+
 function wireInterestDetailEvents(h) {
   const type = h.type || 'generic';
   if (type === 'alcohol') wireAlcoholEvents(h);
-  else if (type === 'anime') wireAnimeEvents(h);
-  else if (type === 'games') wireGamesEvents(h);
+  else if (type === 'anime')   wireAnimeEvents(h);
+  else if (type === 'games')   wireGamesEvents(h);
+  else if (type === 'book')    wireBookEvents(h);
+  else if (type === 'fitness') wireFitnessEvents(h);
 }
 
 // ─────────────────────────────────────────────────────────
@@ -3187,6 +3485,12 @@ async function getInterestRecommendations(h, type) {
     const watched = siblings.filter(w=>w.status==='completed').map(w=>w.name).join(', ') || h.name;
     const tags = [...new Set(siblings.flatMap(s => s.tasteTags||[]))].join(', ') || 'none specified';
     prompt = `Based on completed anime: ${watched}. Taste preferences: ${tags}. Suggest 3 anime they might like, each with a one-sentence reason. Respond ONLY with valid JSON: {"items":[{"name":"...","reason":"..."}]}`;
+  } else if (type === 'book') {
+    const siblings = S.hobbies.filter(x => x.type === 'book');
+    const read = siblings.filter(b=>b.status==='completed').map(b=>`${b.name}${b.author?' by '+b.author:''}`).join(', ') || h.name;
+    const reading = siblings.filter(b=>b.status==='reading').map(b=>b.name).join(', ');
+    const hasManga = siblings.some(b=>b.isManga);
+    prompt = `Books/manga completed: ${read}. ${reading ? 'Currently reading: '+reading+'.' : ''} ${hasManga ? 'Interested in manga.' : ''} Suggest 3 books${hasManga?' or manga':''} they might like next, with a one-sentence reason each. Respond ONLY with valid JSON: {"items":[{"name":"...","reason":"..."}]}`;
   }
   if (!prompt) { recsEl.innerHTML = ''; return; }
 
@@ -3278,6 +3582,8 @@ function updateNameFieldVisibility() {
       generic: 'e.g. guitar, journaling, drawing...',
       anime:   'e.g. Frieren, Attack on Titan...',
       games:   'e.g. Wuthering Waves, Genshin Impact...',
+      book:    'e.g. Piranesi, Dune, Berserk...',
+      fitness: 'e.g. morning run, pull day, swim...',
     };
     inp.placeholder = hints[_hmType] || hints.generic;
   }
@@ -3297,6 +3603,8 @@ function saveHobby() {
     if (_hmType === 'alcohol') { base.drinks = []; base.tasteTags = []; base.notes = ''; }
     if (_hmType === 'anime')   { base.status = 'planned'; base.characters = []; base.tasteTags = []; }
     if (_hmType === 'games')   { base.uid = ''; base.characters = []; base.reminders = []; }
+    if (_hmType === 'book')    { base.status = 'want to read'; base.author = ''; base.rating = null; base.notes = ''; base.isManga = false; }
+    if (_hmType === 'fitness') { base.activityType = 'run'; base.sessions = 0; base.streak = 0; base.totalMins = 0; base.log = []; }
     S.hobbies.push(base);
     logActivity('added: '+name, 'add');
   }
