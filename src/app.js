@@ -514,6 +514,27 @@ function logActivityWithId(id, label, type = 'action') {
 }
 
 function logActivity(label, type = 'action') {
+
+// ─── COPY UID (gacha games) ───────────────────────────────
+function copyUID(hobbyId) {
+  const h = (S.hobbies||[]).find(x => x.id === hobbyId);
+  if (!h?.uid) return;
+  navigator.clipboard.writeText(h.uid).catch(() => {});
+  // show transient toast
+  const toast = document.createElement('div');
+  toast.className = 'uid-copy-toast';
+  toast.textContent = 'UID copied';
+  document.body.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add('uid-copy-toast-visible'));
+  setTimeout(() => { toast.classList.remove('uid-copy-toast-visible'); setTimeout(() => toast.remove(), 300); }, 1500);
+}
+
+function showCopyFeedback(btn) {
+  if (!btn) return;
+  const orig = btn.innerHTML;
+  btn.innerHTML = '<i class="ti ti-check"></i>';
+  setTimeout(() => { btn.innerHTML = orig; }, 1200);
+}
   logActivityWithId('a' + Date.now() + Math.random().toString(36).slice(2), label, type);
 }
 
@@ -1108,9 +1129,6 @@ function interestTileOverview(h) {
 
   if (type === 'games') {
     const rows = [];
-    rows.push(`<div class="interest-tile-row"><span>${h.uid ? `UID ${h.uid}` : 'no UID set'}</span></div>`);
-    const chars = (h.characters||[]).slice(0,2);
-    chars.forEach(c => rows.push(`<div class="interest-tile-row"><span>${c.name}</span></div>`));
     const reminders = h.reminders || [];
     const due = reminders.filter(r => {
       if (!r.lastDone) return true;
@@ -1119,7 +1137,17 @@ function interestTileOverview(h) {
       if (r.recurrence === 'weekly') return since > 6.5*86400000;
       return false;
     }).length;
-    if (reminders.length) rows.push(`<div class="interest-tile-row"><span>${due ? `${due} due` : 'caught up'}</span></div>`);
+    const isGacha = h.subtype === 'gacha';
+    if (h.subtype) rows.push(`<div class="interest-tile-row"><span class="game-subtype-chip">${h.subtype}</span></div>`);
+    if (isGacha && h.uid) {
+      rows.push(`<div class="interest-tile-row interest-tile-row-uid"><span class="uid-value">${h.uid}</span><button class="uid-copy-btn" onclick="event.stopPropagation();copyUID('${h.id}')" title="copy UID"><i class="ti ti-copy"></i> copy</button></div>`);
+    } else {
+      const chars = (h.characters||[]).slice(0,2);
+      if (chars.length) chars.forEach(c => rows.push(`<div class="interest-tile-row"><span>${c.name}</span></div>`));
+      else rows.push(`<div class="interest-tile-row"><span>${h.uid ? `UID ${h.uid}` : 'no UID set'}</span></div>`);
+    }
+    const totalReminders = reminders.length;
+    if (totalReminders) rows.push(`<div class="interest-tile-row"><i class="ti ti-bell" style="font-size:9px;color:var(--ink3);margin-right:4px"></i><span>${totalReminders}</span></div>`);
     return rows.join('');
   }
 
@@ -1200,6 +1228,15 @@ function renderHobbies() {
     });
     grid.appendChild(tile);
   });
+
+  // ghost add card — lives inside the grid, same size as tiles
+  const addCard = document.createElement('div');
+  addCard.className = 'interest-tile interest-tile-add';
+  addCard.setAttribute('role', 'button');
+  addCard.setAttribute('aria-label', 'add interest');
+  addCard.innerHTML = `<div class="interest-tile-add-inner"><i class="ti ti-plus interest-tile-add-icon"></i><span class="interest-tile-add-label">add</span></div>`;
+  addCard.addEventListener('click', () => openHobbyModal());
+  grid.appendChild(addCard);
 
   list.appendChild(grid);
 }
@@ -2505,7 +2542,6 @@ function drawTopDownFlower(t) {
 
 // ─── SPIRAL BLOOM TRANSITION ──────────────────────────────
 function bloomAndEnter() {
-  // stop idle animation
   if (_flowerAnim) { clearInterval(_flowerAnim); _flowerAnim = null; }
   stopIntroBirds();
 
@@ -2517,83 +2553,117 @@ function bloomAndEnter() {
   const cx  = window.innerWidth  / 2;
   const cy  = window.innerHeight / 2;
 
+  // get the flower canvas so we can sample its current frame
+  const flowerCanvas = document.getElementById('intro-flower-canvas');
+  const flowerSize = flowerCanvas ? (flowerCanvas.offsetWidth || 200) : 200;
+
   let frame = 0;
-  const totalFrames = 65;
-  const maxR = Math.sqrt(cx*cx + cy*cy) * 1.05;
+  const totalFrames = 80;
+  const maxR = Math.sqrt(cx*cx + cy*cy) * 1.1;
+
+  function ease(p) { return p < 0.5 ? 2*p*p : -1+(4-2*p)*p; }
 
   function drawBloomFrame() {
     ctx.clearRect(0, 0, bc.width, bc.height);
-    const p = frame / totalFrames; // 0→1
-    const eased = p < 0.5 ? 2*p*p : -1+(4-2*p)*p; // ease in-out
+    const p     = frame / totalFrames;
+    const ep    = ease(p);
 
-    // ── spiraling petals fill screen ──
-    const petalCount = 8;
-    for (let i = 0; i < petalCount; i++) {
-      const baseAngle = (i / petalCount) * Math.PI * 2;
-      const spin = eased * Math.PI * 3; // spiral 1.5 rotations
-      const angle = baseAngle + spin;
-      const pLen  = eased * maxR * 1.2;
-      const pWidth = eased * maxR * 0.45;
-
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.rotate(angle);
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.bezierCurveTo(pWidth*0.5, pLen*0.2, pWidth*0.45, pLen*0.6, 0, pLen);
-      ctx.bezierCurveTo(-pWidth*0.45, pLen*0.6, -pWidth*0.5, pLen*0.2, 0, 0);
-      ctx.closePath();
-      const alpha = Math.min(1, eased * 1.4);
-      const grad = ctx.createLinearGradient(0, 0, 0, pLen);
-      grad.addColorStop(0, `rgba(245,232,224,${alpha})`);
-      grad.addColorStop(1, `rgba(232,200,184,${alpha})`);
-      ctx.fillStyle = grad;
-      ctx.fill();
-      ctx.restore();
-    }
-
-    // ── spiraling leaves between petals ──
-    const leafCount = 8;
-    for (let i = 0; i < leafCount; i++) {
-      const baseAngle = (i / leafCount) * Math.PI * 2 + (Math.PI / leafCount);
-      const spin = eased * Math.PI * 2.5;
-      const angle = baseAngle + spin;
-      const lLen  = eased * maxR * 1.1;
-      const lWidth = eased * maxR * 0.28;
+    // PHASE 1 (p 0→0.55): the flower itself grows from its position
+    // draw the actual flower using the same drawTopDownFlower function but scaled
+    if (p <= 0.55) {
+      const growP   = p / 0.55;
+      const growEp  = ease(growP);
+      // scale: from 1x at start → enough to fill the screen at end of phase 1
+      // flower starts at ~flowerSize px. Screen diagonal is maxR*2. So scale needed = maxR*2 / flowerSize * ~2 (since petals extend to ~0.5 of radius from center)
+      const targetScale = (maxR * 2.6) / flowerSize;
+      const scale   = 1 + growEp * (targetScale - 1);
+      // rotation during expansion — the idle rotation was at 0.04*t; now spin faster as it grows
+      const spin    = growEp * Math.PI * 1.5;
+      const breathe = 1 + Math.sin(growEp * Math.PI * 3) * 0.04;
 
       ctx.save();
       ctx.translate(cx, cy);
-      ctx.rotate(angle);
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.bezierCurveTo(lWidth*0.5, lLen*0.25, lWidth*0.4, lLen*0.65, 0, lLen);
-      ctx.bezierCurveTo(-lWidth*0.4, lLen*0.65, -lWidth*0.5, lLen*0.25, 0, 0);
-      ctx.closePath();
-      const alpha = Math.min(1, eased * 1.3);
-      ctx.fillStyle = `rgba(${i%2===0?'138,170,120':'106,144,96'},${alpha*0.85})`;
-      ctx.fill();
-      // vine curl from center
-      if (p > 0.2) {
+      ctx.scale(scale, scale);
+      ctx.rotate(spin);
+      // draw leaves
+      const leafCount = 6;
+      for (let i = 0; i < leafCount; i++) {
+        const angle = (i / leafCount) * Math.PI * 2;
+        const lLen  = 52 * breathe;
+        const lW    = 14;
+        ctx.save();
+        ctx.rotate(angle);
         ctx.beginPath();
         ctx.moveTo(0, 0);
-        const vProgress = (p - 0.2) / 0.8;
-        const vLen = lLen * vProgress * 0.85;
-        ctx.quadraticCurveTo(lWidth*0.3*Math.sin(p*4), vLen*0.5, 0, vLen);
-        ctx.strokeStyle = `rgba(80,110,60,${alpha*0.5})`;
-        ctx.lineWidth = 1.2;
-        ctx.stroke();
+        ctx.bezierCurveTo(lW*0.5, lLen*0.35, lW*0.4, lLen*0.65, lLen*0.9, lLen*0.92);
+        ctx.bezierCurveTo(-lW*0.4, lLen*0.65, -lW*0.5, lLen*0.35, 0, 0);
+        ctx.fillStyle = i % 2 === 0 ? '#8aaa78' : '#6a9060';
+        ctx.globalAlpha = 0.82 * Math.min(1, growP * 2);
+        ctx.fill();
+        ctx.restore();
       }
+      // draw petals
+      const petalCount = 8;
+      for (let i = 0; i < petalCount; i++) {
+        const angle = (i / petalCount) * Math.PI * 2;
+        const pLen  = 44 * breathe;
+        const pW    = 16;
+        ctx.save();
+        ctx.rotate(angle);
+        ctx.beginPath();
+        ctx.moveTo(0, 6);
+        ctx.bezierCurveTo(pW*0.6, 12, pW*0.55, pLen*0.6, 0, pLen);
+        ctx.bezierCurveTo(-pW*0.55, pLen*0.6, -pW*0.6, 12, 0, 6);
+        ctx.closePath();
+        const grad = ctx.createLinearGradient(0, 0, 0, pLen);
+        grad.addColorStop(0, '#f5e8e0');
+        grad.addColorStop(0.5, '#eedad0');
+        grad.addColorStop(1, '#e8c8b8');
+        ctx.fillStyle = grad;
+        ctx.globalAlpha = 0.92;
+        ctx.fill();
+        ctx.restore();
+      }
+      // inner petals
+      for (let i = 0; i < 6; i++) {
+        const angle = (i / 6) * Math.PI * 2 + Math.PI / 6;
+        const pLen  = 26 * breathe;
+        ctx.save();
+        ctx.rotate(angle);
+        ctx.beginPath();
+        ctx.moveTo(0, 4);
+        ctx.bezierCurveTo(5, 8, 4.5, pLen*0.55, 0, pLen);
+        ctx.bezierCurveTo(-4.5, pLen*0.55, -5, 8, 0, 4);
+        ctx.closePath();
+        ctx.fillStyle = '#f8e8d8';
+        ctx.globalAlpha = 0.85;
+        ctx.fill();
+        ctx.restore();
+      }
+      // center
+      ctx.globalAlpha = 1;
+      const cGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, 10 * breathe);
+      cGrad.addColorStop(0,  '#f0d840');
+      cGrad.addColorStop(0.6,'#d8b820');
+      cGrad.addColorStop(1,  '#c09010');
+      ctx.beginPath();
+      ctx.arc(0, 0, 10 * breathe, 0, Math.PI*2);
+      ctx.fillStyle = cGrad;
+      ctx.fill();
       ctx.restore();
     }
 
-    // ── center circle grows to cover everything ──
-    if (p > 0.55) {
-      const coverP = (p - 0.55) / 0.45;
-      const coverR = coverP * maxR * 1.3;
+    // PHASE 2 (p 0.45→1): white radial flood from center washes over the expanded flower
+    if (p > 0.45) {
+      const coverP = (p - 0.45) / 0.55;
+      const coverEp = ease(coverP);
+      const coverR  = coverEp * maxR * 1.4;
       const coverGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, coverR);
-      coverGrad.addColorStop(0,   `rgba(253,252,250,${coverP})`);
-      coverGrad.addColorStop(0.6, `rgba(245,242,237,${coverP*0.9})`);
-      coverGrad.addColorStop(1,   `rgba(235,231,224,0)`);
+      // use actual app bg color
+      const bgColor = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#fefefe';
+      coverGrad.addColorStop(0,   `${bgColor}ff`);
+      coverGrad.addColorStop(0.5, `${bgColor}cc`);
+      coverGrad.addColorStop(1,   `${bgColor}00`);
       ctx.beginPath();
       ctx.arc(cx, cy, coverR, 0, Math.PI*2);
       ctx.fillStyle = coverGrad;
@@ -2604,7 +2674,6 @@ function bloomAndEnter() {
     if (frame <= totalFrames) {
       requestAnimationFrame(drawBloomFrame);
     } else {
-      // hold for a beat, then transition to app
       setTimeout(() => {
         bc.style.display = 'none';
         document.getElementById('intro').style.display = 'none';
@@ -2617,7 +2686,7 @@ function bloomAndEnter() {
         requestAnimationFrame(() => renderBlossom());
         setTimeout(maybeSpiritWhisper, 3000);
         setTimeout(maybeWeeklyRecap,   5000);
-      }, 600); // hold the full bloom for 600ms
+      }, 400);
     }
   }
 
@@ -3204,10 +3273,18 @@ function gamesDetailHTML(h) {
   const reminders = h.reminders || [];
   return `
     <div class="idtl-section">
+      <div class="idtl-section-hdr"><span>game type</span></div>
+      <div class="idtl-tags" style="flex-wrap:wrap;gap:6px">
+        ${GAME_SUBTYPES.map(t => `<button class="idtl-action-btn ${h.subtype===t?'idtl-action-btn-active':''}" data-action="set-subtype" data-subtype="${t}" style="width:auto;padding:7px 12px">${t}</button>`).join('')}
+      </div>
+    </div>
+
+    <div class="idtl-section">
       <div class="idtl-section-hdr"><span>account</span></div>
       <div class="idtl-add-row">
         <input class="idtl-input" id="game-uid-input" placeholder="UID / username" value="${h.uid||''}" />
         <button class="idtl-add-btn" data-action="save-uid"><i class="ti ti-check"></i></button>
+        ${h.uid ? `<button class="idtl-add-btn" data-action="copy-uid" title="copy UID" style="background:var(--bg2)"><i class="ti ti-copy"></i></button>` : ''}
       </div>
     </div>
 
@@ -3259,9 +3336,18 @@ function gamesDetailHTML(h) {
 
 function wireGamesEvents(h) {
   const body = document.getElementById('idtl-body');
+  body.querySelectorAll('[data-action="set-subtype"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      h.subtype = h.subtype === btn.dataset.subtype ? '' : btn.dataset.subtype;
+      save(); refreshInterestDetail();
+    });
+  });
   body.querySelector('[data-action="save-uid"]')?.addEventListener('click', () => {
     h.uid = document.getElementById('game-uid-input').value.trim();
     save(); refreshInterestDetail();
+  });
+  body.querySelector('[data-action="copy-uid"]')?.addEventListener('click', () => {
+    if (h.uid) { navigator.clipboard.writeText(h.uid).catch(() => {}); showCopyFeedback(body.querySelector('[data-action="copy-uid"]')); }
   });
   body.querySelector('[data-action="add-game-char"]')?.addEventListener('click', () => {
     const nameEl = document.getElementById('game-char-input');
@@ -3602,7 +3688,7 @@ function saveHobby() {
     const base = { id:'h'+Date.now(), name, icon:_hmIcon, color:_hmColor, type:_hmType, sessions:0 };
     if (_hmType === 'alcohol') { base.drinks = []; base.tasteTags = []; base.notes = ''; }
     if (_hmType === 'anime')   { base.status = 'planned'; base.characters = []; base.tasteTags = []; }
-    if (_hmType === 'games')   { base.uid = ''; base.characters = []; base.reminders = []; }
+    if (_hmType === 'games')   { base.uid = ''; base.subtype = ''; base.characters = []; base.reminders = []; }
     if (_hmType === 'book')    { base.status = 'want to read'; base.author = ''; base.rating = null; base.notes = ''; base.isManga = false; }
     if (_hmType === 'fitness') { base.activityType = 'run'; base.sessions = 0; base.streak = 0; base.totalMins = 0; base.log = []; }
     S.hobbies.push(base);

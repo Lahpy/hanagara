@@ -229,7 +229,6 @@
         <p class="eyebrow" style="margin-top:0">interests</p>
         <div class="interest-type-filter" id="interest-type-filter"></div>
         <div id="hobby-list"></div>
-        <button class="add-sub full-btn" onclick="openHobbyModal()">+ add interest</button>
       </div>
 
       <!-- GOALS -->
@@ -336,12 +335,14 @@
               </div>
               <div class="mc-identity" id="mc-identity"></div>
 
-              <!-- full-width donut chart in SVG -->
-              <div class="mc-chart-wrap">
-                <svg id="mc-pie-svg" viewBox="0 0 200 200" class="mc-pie-svg"></svg>
-                <div class="mc-chart-center" id="mc-chart-center"></div>
+              <!-- side-by-side: pie left, legend right (old layout feel) -->
+              <div class="mc-pie-wrap">
+                <div class="mc-pie-left">
+                  <svg id="mc-pie-svg" viewBox="0 0 200 200" class="mc-pie-svg"></svg>
+                  <div class="mc-chart-center" id="mc-chart-center"></div>
+                </div>
+                <div class="mc-pie-legend" id="mc-pie-legend"></div>
               </div>
-              <div class="mc-pie-legend" id="mc-pie-legend"></div>
 
               <div class="mc-section-label" style="margin-top:18px;padding-top:18px;border-top:1px solid var(--line)">top artists</div>
               <div id="mc-artists"></div>
